@@ -46,8 +46,9 @@ class Network(object):
                 output = slim.fully_connected(fc1, 1)
         return output
 
-    def eval_binary_acc(self, dataset=AVAImages("score"), model_path='./model2'):
-        dataset.load_data()
+    def eval_binary_acc(self, model_path='./model2'):
+        dataset = AVAImages()
+        dataset.read_data('AVA_data_score')
         x_test, y_test = dataset.test_set_x, np.int64(dataset.test_set_y >= 5)  # 前提test_set_y.shape=(num,)
         y_test = y_test[:, np.newaxis]
         w, h, c = self.input_size
@@ -95,8 +96,9 @@ class Network(object):
             loss = 0
         return sess.run(loss, feed_dict={x: x_val, y: y_val})
 
-    def train_AB(self, parameter_list: tuple, dataset=AVAImages("tag"), model_save_path='./model/'):
-        dataset.load_data()
+    def train_AB(self, parameter_list: tuple, model_save_path='./model/'):
+        dataset = AVAImages()
+        dataset.read_data(read_dir='AVA_data_tag')
         batch_size, learning_rate, learning_rate_decay, epoch = parameter_list
         w, h, c = self.input_size
         with tf.name_scope("Inputs"):
@@ -147,9 +149,11 @@ class Network(object):
         print([str(i.name) for i in not_initialized_vars])
         return not_initialized_vars
 
-    def train_UA_C(self, parameter_list: tuple, dataset=AVAImages("score"),
-                   model_read_path='./model/', model_save_path='./model2/'):
-        dataset.load_data()
+    def train_UA_C(self, parameter_list: tuple,
+                   model_read_path='./model/',
+                   model_save_path='./model2/'):
+        dataset = AVAImages()
+        dataset.read_data('AVA_data_score')
         # 重置默认图 防止出现意外错误
         tf.reset_default_graph()  # 重置默认图。
         # parameter list
@@ -203,6 +207,8 @@ class Network(object):
                         break
                     if step == 20:
                         break
+            writer = tf.summary.FileWriter("logs/", tf.get_default_graph())
+            writer.close()
 
     def restore_net(self):
         """

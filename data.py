@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pickle
 from progressbar import ProgressBar
 
 
@@ -18,14 +19,13 @@ def read_tags(filedir="AVA_dataset/tags.txt"):
 
 
 class AVAImages:
-    def __init__(self, type: str):
+    def __init__(self):
         self.image_url = []
         self.score = []
         self.cat = []
         self.challenge = []
         self.batch_index = 0
         self.batch_num = 0
-        self.type = type
 
         # split
         self.train_set_x = 0
@@ -35,7 +35,13 @@ class AVAImages:
         self.val_set_x = 0
         self.val_set_y = 0
 
-    def load_data(self, filedir="AVA_dataset/AVA.txt", train_prob=0.1, test_prob=0.003, val_prob=0.0001):
+    def split_data(self,
+                   type: str,
+                   filedir="AVA_dataset/AVA.txt",
+                   train_prob=0.1,
+                   test_prob=0.003,
+                   val_prob=0.0001
+                   ):
         """
         :param filedir:
 
@@ -46,7 +52,7 @@ class AVAImages:
         :var batch_index: int
         """
 
-        if self.type == "score":
+        if type == "score":
             with open(filedir, "r") as f:
                 lines = f.readlines()
                 for line in lines:
@@ -88,7 +94,8 @@ class AVAImages:
                     self.score[int(total * (train_prob + test_prob)):
                                int(total * (train_prob + test_prob + val_prob))]
                 )
-        elif self.type == "tag":
+                self.save_data(save_dir='AVA_data_score')
+        elif type == "tag":
             with open(filedir, "r") as f:
                 lines = f.readlines()
                 for line in lines:
@@ -133,6 +140,35 @@ class AVAImages:
                     self.cat[int(total * (train_prob + test_prob)):
                              int(total * (train_prob + test_prob + val_prob))]
                 )
+                self.save_data(save_dir='AVA_data_tag')
+
+    def save_data(self, save_dir='AVA_data_score/'):
+        with open(save_dir + "train_set_x.pkl", "wb") as f:
+            pickle.dump(self.train_set_x, f)
+        with open(save_dir + "train_set_y.pkl", "wb") as f:
+            pickle.dump(self.train_set_y, f)
+        with open(save_dir + "test_set_x.pkl", "wb") as f:
+            pickle.dump(self.test_set_x, f)
+        with open(save_dir + "test_set_y.pkl", "wb") as f:
+            pickle.dump(self.test_set_y, f)
+        with open(save_dir + "val_set_x.pkl", "wb") as f:
+            pickle.dump(self.val_set_x, f)
+        with open(save_dir + "val_set_y.pkl", "wb") as f:
+            pickle.dump(self.val_set_y, f)
+
+    def read_data(self, read_dir='AVA_data_score/'):
+        with open(read_dir + 'train_set_x.pkl', 'rb') as f:
+            self.train_set_x = pickle.load(f)
+        with open(read_dir + 'train_set_y.pkl', 'rb') as f:
+            self.train_set_y = pickle.load(f)
+        with open(read_dir + 'test_set_x.pkl', 'rb') as f:
+            self.test_set_x = pickle.load(f)
+        with open(read_dir + 'test_set_y.pkl', 'rb') as f:
+            self.test_set_y = pickle.load(f)
+        with open(read_dir + 'val_set_x.pkl', 'rb') as f:
+            self.val_set_x = pickle.load(f)
+        with open(read_dir + 'val_set_y.pkl', 'rb') as f:
+            self.val_set_y = pickle.load(f)
 
     def cal_score(self, score_distribution: list):
         """以均分作为图像的分数"""
@@ -188,6 +224,8 @@ class AVAImages:
         :var x_batch: (batch size, width, height, channels)
         """
         batch_end_flag = 0
+        self.batch_index = 0
+        self.batch_num = 0
         # print("loading batch images ...")
 
         if self.batch_num == 0:
@@ -206,5 +244,4 @@ class AVAImages:
         x_batch, y_batch = self.urls_to_images(x_urls, y, flag=0)
         return x_batch, y_batch, batch_end_flag
 
-    def load_val_set(self):
-        return self.val_set_x, self.val_set_y
+
