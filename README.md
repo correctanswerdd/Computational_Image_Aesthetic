@@ -2,8 +2,8 @@
 
 ## Table of Contents
 
-* [AVA dataset](#avadataset)
-* [Baseline Network](#baselinenetwork)
+* [AVA dataset](#ava-dataset)
+* [Baseline Network](#baseline-network)
 
 ## AVA dataset
 
