@@ -6,17 +6,17 @@
 
 ## AVA dataset
 
-<img src="/Users/shelly/Documents/GitHub/Computational_Image_Aesthetic/img/2.png" alt="2" style="zoom: 67%;" />
+<img src="./img/2.png" alt="2" style="zoom: 67%;" />
 
 ### AVA.txt
 
-<img src="/Users/shelly/Documents/GitHub/Computational_Image_Aesthetic/img/3.png" alt="3"  />
+<img src="./img/3.png" alt="3"  />
 
 Total: about 250000 images
 
 ### tags.txt
 
-<img src="/Users/shelly/Documents/GitHub/Computational_Image_Aesthetic/img/4.png" alt="4" style="zoom:67%;" />
+<img src="./img/4.png" alt="4" style="zoom:67%;" />
 
 tag_id + tag_description
 
@@ -42,7 +42,7 @@ Split data set:
 
 ### Architecture
 
-<img src="/Users/shelly/Documents/GitHub/Computational_Image_Aesthetic/img/1.png" alt="1" style="zoom: 50%;" />
+<img src="./img/1.png" alt="1" style="zoom: 50%;" />
 
 ### Training log
 
