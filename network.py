@@ -30,19 +30,16 @@ class Network(object):
         return fc2
 
     def tags_net(self, inputs):
-        with tf.name_scope('res50'):
-            block1, _ = resnet_v2_50(inputs=inputs, num_classes=128)
-        fc1 = slim.fully_connected(block1, 256, activation_fn=tf.nn.relu)
+        block1, _ = resnet_v2_50(inputs=inputs, num_classes=16)
+        fc1 = slim.fully_connected(block1, 8, activation_fn=tf.nn.relu)
         output = slim.fully_connected(fc1, 132, activation_fn=tf.nn.softmax)
         return output
 
     def score_net(self, inputs):
         block1, _ = resnet_v2_50(inputs=inputs, num_classes=128)
         with tf.variable_scope('trainable'):
-            with tf.name_scope('fc1'):
-                fc1 = slim.fully_connected(block1, 64, activation_fn=tf.nn.relu)
-            with tf.name_scope('output'):
-                output = slim.fully_connected(fc1, 1)
+            fc1 = slim.fully_connected(block1, 64, activation_fn=tf.nn.relu)
+            output = slim.fully_connected(fc1, 1)
         return output
 
     def propagate(self, inputs):
@@ -69,7 +66,7 @@ class Network(object):
             loss = 0
         return sess.run(loss, feed_dict={x: x_val, y: y_val})
 
-    def train_AB(self, parameter_list: tuple, dataset=AVAImages(), model_save_path='./model/'):
+    def train_AB(self, parameter_list: tuple, dataset=AVAImages("tag"), model_save_path='./model/'):
         dataset.load_data()
         batch_size, learning_rate, learning_rate_decay, epoch = parameter_list
         w, h, c = self.input_size
@@ -95,7 +92,7 @@ class Network(object):
                 # bn = 0
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, _, end = dataset.load_next_batch(batch_size)
+                    x_b, y_b, end = dataset.load_next_batch(batch_size)
                     train_op_, loss_, step = sess.run([train_op, loss, global_step], feed_dict={x: x_b, y: y_b})
                     if step % 1 == 0:
                         print("training step {0}, loss {1}, validation loss {2}"
@@ -114,7 +111,7 @@ class Network(object):
         print([str(i.name) for i in not_initialized_vars])
         return not_initialized_vars
 
-    def train_UA_C(self, parameter_list: tuple, dataset=AVAImages(),
+    def train_UA_C(self, parameter_list: tuple, dataset=AVAImages("score"),
                    model_read_path='./model/', model_save_path='./model2/'):
         dataset.load_data()
         # 重置默认图 防止出现意外错误
@@ -156,12 +153,12 @@ class Network(object):
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
-                    x_b, _, y_b, end = dataset.load_next_batch(batch_size)
+                    x_b, y_b, end = dataset.load_next_batch(batch_size)
                     train_op_, loss_, step = sess.run([train_op, mse, global_step], feed_dict={x: x_b, y: y_b})
                     if dataset.batch_index % 5 == 0:
                         print("training step {0}, loss {1}, validation loss {2}"
                               .format(step, loss_, self.validation_loss(sess, y_outputs, x, y, dataset)))
-                        saver.save(sess, model_save_path + 'my_model.ckpt', global_step=global_step)
+                        saver.save(sess, model_save_path + 'my_model', global_step=global_step)
                     if end == 1:
                         break
 
