@@ -30,17 +30,42 @@ class Network(object):
         return fc2
 
     def tags_net(self, inputs):
-        block1, _ = resnet_v2_50(inputs=inputs, num_classes=16)
-        fc1 = slim.fully_connected(block1, 8, activation_fn=tf.nn.relu)
+        with tf.name_scope('res50'):
+            block1, _ = resnet_v2_50(inputs=inputs, num_classes=128)
+        fc1 = slim.fully_connected(block1, 256, activation_fn=tf.nn.relu)
         output = slim.fully_connected(fc1, 132, activation_fn=tf.nn.softmax)
         return output
 
     def score_net(self, inputs):
         block1, _ = resnet_v2_50(inputs=inputs, num_classes=128)
         with tf.variable_scope('trainable'):
-            fc1 = slim.fully_connected(block1, 64, activation_fn=tf.nn.relu)
-            output = slim.fully_connected(fc1, 1)
+            with tf.name_scope('fc1'):
+                fc1 = slim.fully_connected(block1, 64, activation_fn=tf.nn.relu)
+            with tf.name_scope('output'):
+                output = slim.fully_connected(fc1, 1)
         return output
+
+    def eval_binary_acc(self, dataset, model_path='./model2'):
+        x_test, y_test = dataset.test_set_x, dataset.test_set_y >= 0.5
+        w, h, c = self.input_size
+        x = tf.placeholder(tf.float32, [None, w, h, c])
+        y = tf.placeholder(tf.float32, [None, self.output_size])
+        y_outputs = self.propagate(x)
+        y_pred = y_outputs >= 0.5
+        correct_prediction = tf.equal(y_pred, y_test)
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+                global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+                accuracy_score = sess.run(accuracy, feed_dict={x: x_test, y: y_test})
+                print("test accuracy - %g" % accuracy_score)
+            else:
+                print('No checkpoing file found')
+                return
 
     def propagate(self, inputs):
         if self.net == "predict_tags":
@@ -54,19 +79,17 @@ class Network(object):
             return self.comparator(x1, x2)
 
     def validation_loss(self, sess, y_outputs, x, y, dataset):
+        x_val, y_val = dataset.val_set_x, dataset.val_set_y
         if self.net == "predict_tags":
-            x_val, y_val = dataset.val_set_x, dataset.val_set_y_tag
             entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_outputs, labels=tf.argmax(y, 1))
             loss = tf.reduce_mean(entropy)
         elif self.net == "predict_score":
-            x_val, y_val = dataset.val_set_x, dataset.val_set_y_score
             loss = tf.losses.mean_squared_error(y, y_outputs)
         else:
-            x_val, y_val = 0, 0
             loss = 0
         return sess.run(loss, feed_dict={x: x_val, y: y_val})
 
-    def train_AB(self, parameter_list: tuple, dataset=AVAImages("tag"), model_save_path='./model/'):
+    def train_AB(self, parameter_list: tuple, dataset=AVAImages(), model_save_path='./model/'):
         dataset.load_data()
         batch_size, learning_rate, learning_rate_decay, epoch = parameter_list
         w, h, c = self.input_size
@@ -92,7 +115,7 @@ class Network(object):
                 # bn = 0
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch(batch_size)
+                    x_b, y_b, _, end = dataset.load_next_batch(batch_size)
                     train_op_, loss_, step = sess.run([train_op, loss, global_step], feed_dict={x: x_b, y: y_b})
                     if step % 1 == 0:
                         print("training step {0}, loss {1}, validation loss {2}"
@@ -111,7 +134,7 @@ class Network(object):
         print([str(i.name) for i in not_initialized_vars])
         return not_initialized_vars
 
-    def train_UA_C(self, parameter_list: tuple, dataset=AVAImages("score"),
+    def train_UA_C(self, parameter_list: tuple, dataset=AVAImages(),
                    model_read_path='./model/', model_save_path='./model2/'):
         dataset.load_data()
         # 重置默认图 防止出现意外错误
@@ -153,12 +176,12 @@ class Network(object):
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch(batch_size)
+                    x_b, _, y_b, end = dataset.load_next_batch(batch_size)
                     train_op_, loss_, step = sess.run([train_op, mse, global_step], feed_dict={x: x_b, y: y_b})
                     if dataset.batch_index % 5 == 0:
                         print("training step {0}, loss {1}, validation loss {2}"
                               .format(step, loss_, self.validation_loss(sess, y_outputs, x, y, dataset)))
-                        saver.save(sess, model_save_path + 'my_model', global_step=global_step)
+                        saver.save(sess, model_save_path + 'my_model.ckpt', global_step=global_step)
                     if end == 1:
                         break
 
