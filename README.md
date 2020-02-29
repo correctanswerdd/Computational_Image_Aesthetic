@@ -31,11 +31,27 @@ Total: 66 tags
 
 ### Data set
 
+#### Tag - Classification Task
+
 x: (batch_size, 224, 224, 3)
 
 y: (batch_size, 132), in which 132 = 66 * 2. 66 is the number of tags.
 
-Split data set:
+Split data set 'tag':
+
+- 0.96 train set
+
+- 0.005 test set
+
+- 0.005 validation set
+
+#### Score - Regression Task
+
+x: (batch_size, 224, 224, 3)
+
+y: (batch_size, 1)
+
+Split data set 'score':
 
 - 0.96 train set
 - 0.005 test set
@@ -47,7 +63,7 @@ Split data set:
 
 ### Related codes
 
-`network.py` and `train.py`
+`network.py` 
 
 ### Training log
 
@@ -61,4 +77,4 @@ Read pre-trained-A, then train A+C+output
 
 ### Result 
 
-output(A+C+output) loss ~ 0.7
+AVA dataset binary classification accuracy ~ 0.3
