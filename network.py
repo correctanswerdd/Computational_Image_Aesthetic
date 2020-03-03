@@ -108,7 +108,8 @@ class Network(object):
         global_step = tf.Variable(0, trainable=False)
 
         with tf.name_scope("Loss"):
-            entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_outputs, labels=tf.argmax(y, 1))
+            entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=y_outputs, labels=tf.argmax(y, 1))
             loss = tf.reduce_mean(entropy)
         with tf.name_scope("Train"):
             rate = tf.train.exponential_decay(learning_rate, global_step, 200, learning_rate_decay)  # 指数衰减学习率
@@ -189,7 +190,7 @@ class Network(object):
         # with saver&sess
         with tf.Session() as sess:
             # model_path = './model.ckpt'  # 后缀名称仅需要写ckpt即可,后面的00001-00000不必添加
-            re_saver.restore(sess=sess, save_path=model_read_path+'my_model-1340')  # 恢复模型的参数到新的模型
+            re_saver.restore(sess=sess, save_path=model_read_path + 'my_model-1340')  # 恢复模型的参数到新的模型
             un_init = tf.variables_initializer(self.get_uninitialized_variables(sess))  # 获取没有初始化(通过已有model加载)的变量
             # print info of uninitialized variables
             sess.run(un_init)  # 对没有初始化的变量进行初始化并训练.

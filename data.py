@@ -35,6 +35,20 @@ class AVAImages:
         self.val_set_x = 0
         self.val_set_y = 0
 
+    def check_data(self,
+                   filedir="AVA_dataset/AVA.txt",
+                   newfiledir="AVA_dataset/AVA_check.txt",
+                   imgdir="AVA_dataset/images/"):
+        with open(filedir, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                seg = line.split(" ")
+                url = seg[1]
+                img = cv2.imread(imgdir + url + ".jpg")
+                if img is not None:
+                    with open(newfiledir, "a") as fw:
+                        fw.write(line)
+
     def split_data(self,
                    type: str,
                    filedir="AVA_dataset/AVA.txt",
@@ -75,7 +89,7 @@ class AVAImages:
                 self.score = self.score[index]
 
                 # split
-                print("train set: 0->{end}/{total}".format(end=int(total*train_prob), total=total))
+                print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
                 self.train_set_x = self.image_url[0: int(total * train_prob)]
                 self.train_set_y = self.score[0: int(total * train_prob)]
 
@@ -86,8 +100,9 @@ class AVAImages:
                     self.image_url[int(total * train_prob): int(total * (train_prob + test_prob))],
                     self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
                 )
-                print("loading validation images ... {st}->{ed}".format(st=int(total * (train_prob + test_prob)),
-                                                                        ed=int(total * (train_prob + test_prob + val_prob))))
+                print("loading validation images ... {st}->{ed}".format(
+                    st=int(total * (train_prob + test_prob)), 
+                    ed=int(total * (train_prob + test_prob + val_prob))))
                 self.val_set_x, self.val_set_y = self.urls_to_images(
                     self.image_url[int(total * (train_prob + test_prob)):
                                    int(total * (train_prob + test_prob + val_prob))],
@@ -121,9 +136,9 @@ class AVAImages:
                 self.cat = self.cat[index]
 
                 # split
-                print("train set: 0->{end}/{total}".format(end=int(total*train_prob), total=total))
-                self.train_set_x = self.image_url[0: int(total*train_prob)]
-                self.train_set_y = self.cat[0: int(total*train_prob)]
+                print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
+                self.train_set_x = self.image_url[0: int(total * train_prob)]
+                self.train_set_y = self.cat[0: int(total * train_prob)]
 
                 # url to image
                 print("loading test images ... {st}->{ed}".format(st=int(total * train_prob),
@@ -214,7 +229,7 @@ class AVAImages:
                 i += 1
 
         # print("after url to images: {url_num}, {y_num}".format(url_num=len(images), y_num=len(y1)))
-        return np.array(images)/225., np.array(y)
+        return np.array(images) / 225., np.array(y)
 
     def load_next_batch(self, batch_size: int):
         """
@@ -238,10 +253,8 @@ class AVAImages:
             batch_end_flag = 1
         else:
             # print("batch {id1}->{id2}/{total}".format(id1=self.batch_index, id2=self.batch_index+1,total=self.batch_num))
-            x_urls = self.train_set_x[self.batch_index*batch_size: (self.batch_index+1)*batch_size]
-            y = self.train_set_y[self.batch_index * batch_size: (self.batch_index + 1)*batch_size]
+            x_urls = self.train_set_x[self.batch_index * batch_size: (self.batch_index + 1) * batch_size]
+            y = self.train_set_y[self.batch_index * batch_size: (self.batch_index + 1) * batch_size]
             self.batch_index += 1
         x_batch, y_batch = self.urls_to_images(x_urls, y, flag=0)
         return x_batch, y_batch, batch_end_flag
-
-

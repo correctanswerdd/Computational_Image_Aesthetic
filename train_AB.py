@@ -1,6 +1,5 @@
 import tensorflow as tf
 from network import Network
-from data import AVAImages
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
