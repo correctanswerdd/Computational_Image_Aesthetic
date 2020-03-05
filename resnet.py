@@ -27,7 +27,8 @@ Typical use:
 ResNet-101 for image classification into 1000 classes:
    # inputs has shape [batch, 224, 224, 3]
    with slim.arg_scope(resnet_v2.resnet_arg_scope()):
-      net, end_points = resnet_v2.resnet_v2_101(inputs, 1000, is_training=False)
+      net, end_points = resnet_v2.resnet_v2_101(
+          inputs, 1000, is_training=False)
 ResNet-101 for semantic segmentation into 21 classes:
    # inputs has shape [batch, 513, 513, 3]
    with slim.arg_scope(resnet_v2.resnet_arg_scope()):
@@ -83,7 +84,7 @@ def bottleneck(inputs, depth, depth_bottleneck, stride, rate=1,
         preact = slim.batch_norm(
             inputs, activation_fn=tf.nn.relu, scope='preact')
         if depth == depth_in:
-            shortcut = resnet_utils.subsample(inputs, stride, 'shortcut')
+            shortcut = resnet_utils.subsample(inputs, stride, scope='shortcut')
         else:
             shortcut = slim.conv2d(preact, depth, [1, 1], stride=stride,
                                    normalizer_fn=None, activation_fn=None,
@@ -246,6 +247,11 @@ def resnet_v2_block(scope, base_depth, num_units, stride):
 resnet_v2.default_image_size = 224
 
 
+"""
+自定义resnet结构
+"""
+
+
 def resnet_v2_baseline(inputs,
                        num_classes=None,
                        is_training=True,
@@ -357,3 +363,109 @@ def resnet_v2_200(inputs,
 
 
 resnet_v2_200.default_image_size = resnet_v2.default_image_size
+
+
+def res_v2_aes(inputs,
+               blocks,
+               blocks4,
+               blocks4_11, blocks4_12, blocks4_21, blocks4_22, training,
+               num_classes=None,
+               global_pool=True,
+               output_stride=None,
+               include_root_block=True,
+               spatial_squeeze=True,
+               reuse=None,
+               scope=None):
+    with tf.variable_scope(scope, 'resnet_v2', [inputs], reuse=reuse) as sc:
+        end_points_collection = sc.original_name_scope + '_end_points'
+        with slim.arg_scope([slim.conv2d, bottleneck,
+                             resnet_utils.stack_blocks_dense],
+                            outputs_collections=end_points_collection):
+            with slim.arg_scope([slim.batch_norm], is_training=training):
+                net = inputs
+                if include_root_block:
+                    if output_stride is not None:
+                        if output_stride % 4 != 0:
+                            raise ValueError('The output_stride needs to be a multiple of 4.')
+                        output_stride /= 4
+                    with slim.arg_scope([slim.conv2d],
+                                        activation_fn=None, normalizer_fn=None):
+                        net = resnet_utils.conv2d_same(net, 64, 7, stride=2, scope='conv1')
+                    net = slim.max_pool2d(net, [3, 3], stride=1, scope='pool1')
+                net = resnet_utils.stack_blocks_dense(net, blocks, output_stride)
+
+                net1, net2 = tf.split(net, num_or_size_splits=2, axis=1)
+                net_11, net_12 = tf.split(net1, num_or_size_splits=2, axis=2)
+                net_21, net_22 = tf.split(net2, num_or_size_splits=2, axis=2)
+
+                variables = tf.global_variables()
+                net0 = resnet_utils.stack_blocks_dense(net, blocks4, output_stride)
+                net0 = slim.batch_norm(
+                    net0, activation_fn=tf.nn.relu, scope='postnorm', is_training=training)
+
+                net11 = resnet_utils.stack_blocks_dense(net_11, blocks4_11, output_stride)
+                net11 = slim.batch_norm(
+                    net11, activation_fn=tf.nn.relu, scope='postnorm_11', is_training=training)
+
+                net12 = resnet_utils.stack_blocks_dense(net_12, blocks4_12, output_stride)
+                net12 = slim.batch_norm(
+                    net12, activation_fn=tf.nn.relu, scope='postnorm_12', is_training=training)
+
+                net21 = resnet_utils.stack_blocks_dense(net_21, blocks4_21, output_stride)
+                net21 = slim.batch_norm(
+                    net21, activation_fn=tf.nn.relu, scope='postnorm_21', is_training=training)
+
+                net22 = resnet_utils.stack_blocks_dense(net_22, blocks4_22, output_stride)
+                net22 = slim.batch_norm(
+                    net22, activation_fn=tf.nn.relu, scope='postnorm_22', is_training=training)
+                end_points = slim.utils.convert_collection_to_dict(
+                    end_points_collection)
+
+                net0 = slim.avg_pool2d(net0, [7, 7], 1, scope='pool5_concat_0')
+                net11 = slim.avg_pool2d(net11, [4, 4], 1, scope='pool5_concat_11')
+                net12 = slim.avg_pool2d(net12, [4, 4], 1, scope='pool5_concat_12')
+                net21 = slim.avg_pool2d(net21, [4, 4], 1, scope='pool5_concat_21')
+                net22 = slim.avg_pool2d(net22, [4, 4], 1, scope='pool5_concat_22')
+
+                concat = tf.concat([net0, net11, net12, net21, net22], 3, name='concat')
+                # concat = slim.conv2d(concat, 800, [1, 1], scope='fc1', activation_fn=None)
+                # with tf.variable_scope('fc1'):
+                #     concat = tf.layers.batch_normalization(
+                #         concat, center=False, scale=False, training=training)
+                # concat = tf.nn.relu(concat)
+                # concat_n = tf.nn.l2_normalize(concat, 3)
+                # return concat_n
+                concat = slim.conv2d(concat, 800, [1, 1], scope='fc1', activation_fn=None)
+    with tf.variable_scope('fc1'):
+        concat = tf.layers.batch_normalization(concat, center=False, scale=False, training=training)
+        fc1 = tf.nn.relu(concat)
+    fc2 = slim.conv2d(fc1, num_classes, [1, 1], scope='fc2', activation_fn=None)  # type: object
+    logit = tf.squeeze(fc2, [1, 2], name='SpatialSqueeze')
+    softmax = slim.softmax(logit, scope='predictions')
+    return logit, softmax, fc1
+
+
+def resnet_v2_4x4(inputs,
+                  num_classes=None,
+                  is_training=True,
+                  global_pool=True,
+                  output_stride=None,
+                  spatial_squeeze=True,
+                  reuse=None,
+                  scope='resnet_v2_aes'):
+    blocks = [
+        resnet_v2_block('block1', base_depth=64, num_units=3, stride=2),
+        resnet_v2_block('block2', base_depth=128, num_units=4, stride=2),
+        resnet_v2_block('block3', base_depth=256, num_units=6, stride=2),
+    ]
+
+    block4 = [resnet_v2_block('block4', base_depth=512, num_units=3, stride=2)]
+    block4_11 = [resnet_v2_block('block4_11', base_depth=512, num_units=3, stride=2)]
+    block4_12 = [resnet_v2_block('block4_12', base_depth=512, num_units=3, stride=2)]
+    block4_21 = [resnet_v2_block('block4_21', base_depth=512, num_units=3, stride=2)]
+    block4_22 = [resnet_v2_block('block4_22', base_depth=512, num_units=3, stride=2)]
+
+    return res_v2_aes(inputs, blocks, block4, block4_11, block4_12, block4_21, block4_22, is_training, num_classes,
+                      global_pool=global_pool, output_stride=output_stride,
+                      include_root_block=True, spatial_squeeze=spatial_squeeze,
+                      reuse=reuse, scope=scope)

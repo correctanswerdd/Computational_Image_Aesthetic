@@ -50,11 +50,12 @@ class AVAImages:
                         fw.write(line)
 
     def split_data(self,
-                   type: str,
+                   data_type: str,
                    filedir="AVA_dataset/AVA.txt",
-                   train_prob=0.1,
-                   test_prob=0.003,
-                   val_prob=0.0001
+                   save_dir='AVA_data_score/',
+                   train_prob=0.8,
+                   test_prob=0.1,
+                   val_prob=0.1
                    ):
         """
         :param filedir:
@@ -66,7 +67,7 @@ class AVAImages:
         :var batch_index: int
         """
 
-        if type == "score":
+        if data_type == "score":
             with open(filedir, "r") as f:
                 lines = f.readlines()
                 for line in lines:
@@ -109,8 +110,55 @@ class AVAImages:
                     self.score[int(total * (train_prob + test_prob)):
                                int(total * (train_prob + test_prob + val_prob))]
                 )
-                self.save_data(save_dir='AVA_data_score')
-        elif type == "tag":
+                self.save_data(save_dir=save_dir)
+        elif data_type == "score_bi":
+            with open(filedir, "r") as f:
+                lines = f.readlines()
+                for line in lines:
+                    seg = line.split(" ")
+                    seg = list(map(int, seg))
+                    self.image_url.append(seg[1])
+                    if self.cal_score(seg[2:12]) >= 5:
+                        self.score.append([0, 1])
+                    else:
+                        self.score.append([1, 0])
+
+                # to array
+                self.image_url = np.array(self.image_url)
+                self.score = np.array(self.score)
+
+                # shuffle
+                total = self.image_url.shape[0]
+                index = [i for i in range(total)]
+                np.random.shuffle(index)
+                np.random.shuffle(index)
+                np.random.shuffle(index)
+                self.image_url = self.image_url[index]
+                self.score = self.score[index]
+
+                # split
+                print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
+                self.train_set_x = self.image_url[0: int(total * train_prob)]
+                self.train_set_y = self.score[0: int(total * train_prob)]
+
+                # url to image
+                print("loading test images ... {st}->{ed}".format(st=int(total * train_prob),
+                                                                  ed=int(total * (train_prob + test_prob))))
+                self.test_set_x, self.test_set_y = self.urls_to_images(
+                    self.image_url[int(total * train_prob): int(total * (train_prob + test_prob))],
+                    self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
+                )
+                print("loading validation images ... {st}->{ed}".format(
+                    st=int(total * (train_prob + test_prob)), 
+                    ed=int(total * (train_prob + test_prob + val_prob))))
+                self.val_set_x, self.val_set_y = self.urls_to_images(
+                    self.image_url[int(total * (train_prob + test_prob)):
+                                   int(total * (train_prob + test_prob + val_prob))],
+                    self.score[int(total * (train_prob + test_prob)):
+                               int(total * (train_prob + test_prob + val_prob))]
+                )
+                self.save_data(save_dir='AVA_data_score_bi/')
+        elif data_type == "tag":
             with open(filedir, "r") as f:
                 lines = f.readlines()
                 for line in lines:
@@ -155,7 +203,7 @@ class AVAImages:
                     self.cat[int(total * (train_prob + test_prob)):
                              int(total * (train_prob + test_prob + val_prob))]
                 )
-                self.save_data(save_dir='AVA_data_tag')
+                self.save_data(save_dir='AVA_data_tag/')
 
     def save_data(self, save_dir='AVA_data_score/'):
         with open(save_dir + "train_set_x.pkl", "wb") as f:

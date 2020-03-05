@@ -1,5 +1,5 @@
 import tensorflow as tf
-from network import Network
+from network_baseline import Network
 from data import AVAImages
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -15,7 +15,7 @@ def main(_):
                   output_size=1,
                   net="predict_score")
     net.train_UA_C(parameter_list=parameter_list)
-    net.eval_binary_acc(dataset=dataset)
+    net.eval_binary_acc()
 
 
 if __name__ == '__main__':
