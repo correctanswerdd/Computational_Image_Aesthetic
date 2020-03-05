@@ -4,6 +4,7 @@
 
 * [AVA dataset](#ava-dataset)
 * [Baseline Network](#baseline-network)
+* [Aesthetic Network](#aesthetic-network)
 
 ## AVA dataset
 
@@ -78,3 +79,20 @@ Read pre-trained-A, then train A+C+output
 ### Result 
 
 AVA dataset binary classification accuracy ~ 0.3
+
+## Aesthetic Network
+
+### Data set
+
+1. Check data set: remove lines with empty url in `AVA.txt` & create new url file `AVA_check.txt`
+   
+   - `data_check.py`
+2. Split data set -> train set & test set & validation set
+   
+   - `data_create.py`
+   
+### Training log
+
+1. baseline network. Then save weights.
+   - dataset-inputs: (?, 224, 224, 3); dataset-outputs: (?, 2)
+   - `train_baseline.py`
