@@ -36,9 +36,9 @@ class AVAImages:
         self.val_set_y = 0
 
     def check_data(self,
-                   filedir="AVA_dataset/AVA.txt",
-                   newfiledir="AVA_dataset/AVA_check.txt",
-                   imgdir="AVA_dataset/images/"):
+                   filedir="../AVA_dataset/AVA.txt",
+                   newfiledir="../AVA_dataset/AVA_check.txt",
+                   imgdir="../AVA_dataset/images/"):
         with open(filedir, "r") as f:
             lines = f.readlines()
             for line in lines:

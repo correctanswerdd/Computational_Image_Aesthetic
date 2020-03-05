@@ -102,10 +102,10 @@ AVA dataset binary classification accuracy ~ 0.3
 
 1. Check data set: remove lines with empty url in `AVA.txt` & create new url file `AVA_check.txt`
    
-   - `data_check.py`
+   - `check_data.py`
 2. Split data set -> train set & test set & validation set
    
-   - `data_create.py`
+   - `create_data.py`
    
 ### Training log
 
