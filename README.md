@@ -8,17 +8,29 @@
 
 ## AVA dataset
 
-<img src="./img/2.png" alt="2" style="zoom: 67%;" />
+<p align="center">
+    <img src="./img/2.png" alt="Sample"  width="400">
+  	<p align="center">
+    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">数据集文件结构</span></em>
+</p>
 
 ### AVA.txt
 
-<img src="./img/3.png" alt="3"  />
+<p align="center">
+    <img src="./img/3.png" alt="Sample"  width="700">
+  	<p align="center">
+    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">AVA.txt文件存储格式</span></em>
+</p>
 
 Total: about 250000 images
 
 ### tags.txt
 
-<img src="./img/4.png" alt="4" style="zoom:67%;" />
+<p align="center">
+    <img src="./img/4.png" alt="Sample"  width="500">
+  	<p align="center">
+    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">tags.txt文件存储格式/span></em>
+</p>
 
 tag_id + tag_description
 
@@ -60,7 +72,11 @@ Split data set 'score':
 
 ### Architecture
 
-<img src="./img/1.png" alt="1" style="zoom: 50%;" />
+<p align="center">
+    <img src="./img/1.png" alt="Sample"  width="700">
+  	<p align="center">
+    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">baseline network</span></em>
+</p>
 
 ### Related codes
 
