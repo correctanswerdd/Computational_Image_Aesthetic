@@ -1,5 +1,7 @@
 from resnet import resnet_v2_4x4
 from data import AVAImages
+import configparser
+import os
 import tensorflow as tf
 import numpy as np
 slim = tf.contrib.slim
@@ -65,10 +67,24 @@ class Network(object):
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
         return sess.run(accuracy)
 
-    def train_baseline_net(self, parameter_list: tuple, model_save_path='./model_baseline/'):
+    def read_cfg(self):
+        curpath = os.path.dirname(os.path.realpath(__file__))
+        cfgpath = os.path.join(curpath, "cfg.ini")
+        print(cfgpath)  # cfg.ini的路径
+        # 创建管理对象
+        conf = configparser.ConfigParser()
+        # 读ini文件
+        conf.read(cfgpath, encoding="utf-8")  # python3
+        return int(conf.get("parameter", "batch_size")),\
+               float(conf.get("parameter", "learning_rate")),\
+               float(conf.get("parameter", "learning_rate_decay")),\
+               int(conf.get("parameter", "epoch"))
+
+    def train_baseline_net(self, model_save_path='./model_baseline/'):
         dataset = AVAImages()
-        dataset.read_data(read_dir='AVA_data_score_bi/')
-        batch_size, learning_rate, learning_rate_decay, epoch = parameter_list
+        dataset.read_data(read_dir='AVA_data_score_bi/', flag=0)
+        dataset.read_batch_cfg()
+        batch_size, learning_rate, learning_rate_decay, epoch = self.read_cfg()
         w, h, c = self.input_size
         with tf.name_scope("Inputs"):
             x = tf.placeholder(tf.float32, [None, w, h, c])
@@ -94,7 +110,7 @@ class Network(object):
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch(batch_size)
+                    x_b, y_b, end = dataset.load_next_batch_quicker()
                     train_op_, loss_, step = sess.run([train_op, loss, global_step], feed_dict={x: x_b, y: y_b})
                     if step % 5 == 0:
                         print("training step {0}, loss {1}, validation loss {2}"

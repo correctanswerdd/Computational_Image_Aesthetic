@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import pickle
+import configparser
+import os
 from progressbar import ProgressBar
 
 
@@ -25,7 +27,9 @@ class AVAImages:
         self.cat = []
         self.challenge = []
         self.batch_index = 0
+        self.batch_index_max = 0
         self.batch_num = 0
+        self.batch_size = 0
 
         # split
         self.train_set_x = 0
@@ -57,25 +61,57 @@ class AVAImages:
                 progress.end()
                 print("finish the check!")
 
-    def create_train_set(self, read_dir='AVA_data_score_bi/',
-                         train_set_dir='train_raw/',
-                         block_size=500):
-        self.read_data(read_dir=read_dir)
-        self.cal_prob()
+    def create_train_set(self, batch_size,
+                         read_dir='AVA_data_score_bi/',
+                         train_set_dir='train_raw/'):
+        self.batch_size = batch_size
+        self.read_data(read_dir=read_dir, flag=1)  # training set only
+
         i = 0
         total = self.train_set_x.shape[0]
-        it = total // block_size
+        it = total // batch_size
+        self.batch_index_max = it
         while i < it:
             train_block = self.urls_to_images_no_check(
-                self.train_set_x[i * block_size: (i+1) * block_size], flag=0)
+                self.train_set_x[i * batch_size: (i+1) * batch_size], flag=0)
             with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
                 pickle.dump(train_block, f)
+            with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
+                pickle.dump(self.train_set_y[i * batch_size: (i+1) * batch_size], f)
             i += 1
         print('last block!')
         train_block = self.urls_to_images_no_check(
-            self.train_set_x[i * block_size: total])
+            self.train_set_x[i * batch_size: total])
         with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
             pickle.dump(train_block, f)
+        with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(self.train_set_y[i * batch_size: total], f)
+
+        self.create_conf()
+
+    def create_conf(self):
+        curpath = os.path.dirname(os.path.realpath(__file__))
+        cfgpath = os.path.join(curpath, "cfg.ini")
+        print(cfgpath)  # cfg.ini的路径
+        # 创建管理对象
+        conf = configparser.ConfigParser()
+        # 添加一个select
+        conf.add_section("parameter")
+        # 往select添加key和value
+        conf.set("parameter", "batch_index_max", str(self.batch_index_max))
+        conf.set("parameter", "batch_size", str(self.batch_size))
+        conf.write(open(cfgpath, "w"))  # 删除原文件重新写入   "a"是追加模式
+
+    def read_batch_cfg(self):
+        curpath = os.path.dirname(os.path.realpath(__file__))
+        cfgpath = os.path.join(curpath, "cfg.ini")
+        print(cfgpath)  # cfg.ini的路径
+        # 创建管理对象
+        conf = configparser.ConfigParser()
+        # 读ini文件
+        conf.read(cfgpath, encoding="utf-8")  # python3
+        self.batch_index_max = int(conf.get("parameter", "batch_index_max"))
+        self.batch_size = int(conf.get("parameter", "batch_size"))
 
     def split_data(self,
                    data_type: str,
@@ -249,19 +285,27 @@ class AVAImages:
         with open(save_dir + "val_set_y.pkl", "wb") as f:
             pickle.dump(self.val_set_y, f)
 
-    def read_data(self, read_dir='AVA_data_score/'):
-        with open(read_dir + 'train_set_x.pkl', 'rb') as f:
-            self.train_set_x = pickle.load(f)
-        with open(read_dir + 'train_set_y.pkl', 'rb') as f:
-            self.train_set_y = pickle.load(f)
-        with open(read_dir + 'test_set_x.pkl', 'rb') as f:
-            self.test_set_x = pickle.load(f)
-        with open(read_dir + 'test_set_y.pkl', 'rb') as f:
-            self.test_set_y = pickle.load(f)
-        with open(read_dir + 'val_set_x.pkl', 'rb') as f:
-            self.val_set_x = pickle.load(f)
-        with open(read_dir + 'val_set_y.pkl', 'rb') as f:
-            self.val_set_y = pickle.load(f)
+    def read_data(self, read_dir='AVA_data_score/', flag=0):
+        """
+        read data from dir;
+        :param read_dir:
+        :param flag: 0 -> do not read training set; 1 -> training set only
+        :return:
+        """
+        if flag == 1:
+            with open(read_dir + 'train_set_x.pkl', 'rb') as f:
+                self.train_set_x = pickle.load(f)
+            with open(read_dir + 'train_set_y.pkl', 'rb') as f:
+                self.train_set_y = pickle.load(f)
+        else:
+            with open(read_dir + 'test_set_x.pkl', 'rb') as f:
+                self.test_set_x = pickle.load(f)
+            with open(read_dir + 'test_set_y.pkl', 'rb') as f:
+                self.test_set_y = pickle.load(f)
+            with open(read_dir + 'val_set_x.pkl', 'rb') as f:
+                self.val_set_x = pickle.load(f)
+            with open(read_dir + 'val_set_y.pkl', 'rb') as f:
+                self.val_set_y = pickle.load(f)
 
     def cal_score(self, score_distribution: list):
         """以均分作为图像的分数"""
@@ -358,6 +402,28 @@ class AVAImages:
             self.batch_index += 1
         x_batch, y_batch = self.urls_to_images(x_urls, y, flag=0)
         return x_batch, y_batch, batch_end_flag
+
+    def load_next_batch_quicker(self, read_dir='AVA_data_score_bi/'):
+        """
+
+        :param max_block: max block index in dir
+        :return: 1 -> last batch
+        """
+        with open(read_dir + 'train_raw/train_set_x_' + str(self.batch_index) + '.pkl', 'rb') as f:
+            x = pickle.load(f)
+        with open(read_dir + 'train_raw/train_set_y_' + str(self.batch_index) + '.pkl', 'rb') as f:
+            y = pickle.load(f)
+        if self.batch_index == self.batch_index_max:
+            print('last batch!')
+            self.batch_index = 0
+            flag = 1
+        else:
+            self.batch_index += 1
+            flag = 0
+        return x, y, flag
+
+
+
 
     def cal_prob(self):
         print('high quality images in train set: {num}'.format(
