@@ -40,14 +40,42 @@ class AVAImages:
                    newfiledir="AVA_dataset/AVA_check.txt",
                    imgdir="AVA_dataset/images/"):
         with open(filedir, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                seg = line.split(" ")
-                url = seg[1]
-                img = cv2.imread(imgdir + url + ".jpg")
-                if img is not None:
-                    with open(newfiledir, "a") as fw:
+            with open(newfiledir, "a") as fw:
+                lines = f.readlines()
+                i = 0
+
+                progress = ProgressBar(len(lines))
+                progress.start()
+                for line in lines:
+                    seg = line.split(" ")
+                    url = seg[1]
+                    img = cv2.imread(imgdir + url + ".jpg")
+                    if img is not None:
                         fw.write(line)
+                    i += 1
+                    progress.show_progress(i)
+                progress.end()
+                print("finish the check!")
+
+    def create_train_set(self, read_dir='AVA_data_score_bi/',
+                         train_set_dir='train_raw/',
+                         block_size=500):
+        self.read_data(read_dir=read_dir)
+        self.cal_prob()
+        i = 0
+        total = self.train_set_x.shape[0]
+        it = total // block_size
+        while i < it:
+            train_block = self.urls_to_images_no_check(
+                self.train_set_x[i * block_size: (i+1) * block_size], flag=0)
+            with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
+                pickle.dump(train_block, f)
+            i += 1
+        print('last block!')
+        train_block = self.urls_to_images_no_check(
+            self.train_set_x[i * block_size: total])
+        with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(train_block, f)
 
     def split_data(self,
                    data_type: str,
@@ -144,20 +172,22 @@ class AVAImages:
                 # url to image
                 print("loading test images ... {st}->{ed}".format(st=int(total * train_prob),
                                                                   ed=int(total * (train_prob + test_prob))))
-                self.test_set_x, self.test_set_y = self.urls_to_images(
+                self.test_set_x = self.urls_to_images_no_check(
                     self.image_url[int(total * train_prob): int(total * (train_prob + test_prob))],
-                    self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
                 )
+                self.test_set_y = self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
+
                 print("loading validation images ... {st}->{ed}".format(
                     st=int(total * (train_prob + test_prob)), 
                     ed=int(total * (train_prob + test_prob + val_prob))))
-                self.val_set_x, self.val_set_y = self.urls_to_images(
+                self.val_set_x= self.urls_to_images_no_check(
                     self.image_url[int(total * (train_prob + test_prob)):
                                    int(total * (train_prob + test_prob + val_prob))],
-                    self.score[int(total * (train_prob + test_prob)):
-                               int(total * (train_prob + test_prob + val_prob))]
                 )
+                self.val_set_y = self.score[int(total * (train_prob + test_prob)):
+                                            int(total * (train_prob + test_prob + val_prob))]
                 self.save_data(save_dir='AVA_data_score_bi/')
+                self.cal_prob()
         elif data_type == "tag":
             with open(filedir, "r") as f:
                 lines = f.readlines()
@@ -247,6 +277,28 @@ class AVAImages:
             + score_distribution[9] * 10
         return total / sum(score_distribution)
 
+    def urls_to_images_no_check(self, urls, file_dir='AVA_dataset/images/', flag=1):
+        images = []
+        i = 0
+
+        if flag == 1:
+            progress = ProgressBar(urls.shape[0])
+            progress.start()
+            for url in urls:
+                img = cv2.imread(file_dir + str(url) + ".jpg")
+                img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_CUBIC)
+                images.append(img)
+                i += 1
+                progress.show_progress(i)
+            progress.end()
+        else:
+            for url in urls:
+                img = cv2.imread(file_dir + str(url) + ".jpg")
+                img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_CUBIC)
+                images.append(img)
+                i += 1
+        return np.array(images) / 225.
+
     def urls_to_images(self, urls, y_ori, filedir="AVA_dataset/images/", flag=1):
         # print('{name}: {age}'.format(age=24, name='TaoXiao'))  # 通过关键字传递
         # print("before url to images: {url_num}, {y_num}".format(url_num=urls.shape[0], y_num=y_ori_1.shape[0]))
@@ -306,3 +358,11 @@ class AVAImages:
             self.batch_index += 1
         x_batch, y_batch = self.urls_to_images(x_urls, y, flag=0)
         return x_batch, y_batch, batch_end_flag
+
+    def cal_prob(self):
+        print('high quality images in train set: {num}'.format(
+            num=np.sum(np.argmax(self.train_set_y, axis=1)) / self.train_set_y.shape[0]))
+        print('high quality images in test set: {num}'.format(
+            num=np.sum(np.argmax(self.test_set_y, axis=1)) / self.test_set_y.shape[0]))
+        print('high quality images in validation set: {num}'.format(
+            num=np.sum(np.argmax(self.val_set_y, axis=1)) / self.val_set_y.shape[0]))

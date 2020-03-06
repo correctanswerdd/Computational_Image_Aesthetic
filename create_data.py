@@ -9,7 +9,6 @@ if __name__ == '__main__':
     dataset.split_data(data_type='score_bi',
                        filedir="AVA_dataset/AVA_check.txt",
                        save_dir='AVA_data_score_bi/',
-                       train_prob=0.8,
-                       test_prob=0.1,
-                       val_prob=0.1)
-                      
+                       train_prob=0.9,
+                       test_prob=0.05,
+                       val_prob=0.05)
