@@ -103,12 +103,21 @@ AVA dataset binary classification accuracy ~ 0.3
 1. Check data set: remove lines with empty url in `AVA.txt` & create new url file `AVA_check.txt`
    
    - `check_data.py`
-2. Split data set -> train set & test set & validation set
-   
+2. Split data set -> train set & test set & validation set in `./AVA_data_score_bi` or `./AVA_data_score`
    - `create_data.py`
-   
+
+3. Create training set with x_b-y_b-pair pkl in `./AVA_data_score_bi/train_raw` or `./AVA_data_score/train_raw`
+   - `create_train_set.py`
+
 ### Training log
 
-1. baseline network. Then save weights.
+1. baseline network. Then save weights in `./model_baseline`
    - dataset-inputs: (?, 224, 224, 3); dataset-outputs: (?, 2)
+   
    - `train_baseline.py`
+
+2. comparator. Then save weights in `./model_cmp`
+   - dataset-inputs: (?, 224, 224, 3) & (?, 224, 224, 3); dataset-outputs: (?, 3)
+   - `train_comparator.py`
+   
+     

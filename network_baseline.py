@@ -185,7 +185,7 @@ class Network(object):
         t_vars = tf.trainable_variables()  # 获取所有的变量
         g_vars = [var for var in t_vars if 'trainable' in var.name]  # 附加的finetune网络层（需要训练的层）
         var_list = [var for var in t_vars if 'resnet' in var.name]  # 不需要改变的网络层
-        with tf.name_scope("Loss"):
+        with tf.name_scope("Train"):
             rate = tf.train.exponential_decay(learning_rate, global_step, 200, learning_rate_decay)  # 指数衰减学习率
             train_op = tf.train.AdamOptimizer(rate).minimize(mse, var_list=g_vars, global_step=global_step)
 

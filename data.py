@@ -87,12 +87,9 @@ class AVAImages:
         with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
             pickle.dump(self.train_set_y[i * batch_size: total], f)
 
-        self.create_conf()
+        self.write_conf()
 
     def create_conf(self):
-        curpath = os.path.dirname(os.path.realpath(__file__))
-        cfgpath = os.path.join(curpath, "cfg.ini")
-        print(cfgpath)  # cfg.ini的路径
         # 创建管理对象
         conf = configparser.ConfigParser()
         # 添加一个select
@@ -100,18 +97,24 @@ class AVAImages:
         # 往select添加key和value
         conf.set("parameter", "batch_index_max", str(self.batch_index_max))
         conf.set("parameter", "batch_size", str(self.batch_size))
-        conf.write(open(cfgpath, "w"))  # 删除原文件重新写入   "a"是追加模式
+        conf.write(open("cfg.ini", "a"))  # 删除原文件重新写入   "a"是追加模式
+
+    def write_conf(self):
+        # 创建管理对象
+        conf = configparser.ConfigParser()
+        conf.read("cfg.ini", encoding="utf-8")
+        # 往修改某key的value
+        conf.set("parameter", "batch_index_max", str(self.batch_index_max))
+        conf.set("parameter", "batch_size", str(self.batch_size))
+        conf.write(open("cfg.ini", "a"))  # 删除原文件重新写入   "a"是追加模式
 
     def read_batch_cfg(self):
-        curpath = os.path.dirname(os.path.realpath(__file__))
-        cfgpath = os.path.join(curpath, "cfg.ini")
-        print(cfgpath)  # cfg.ini的路径
         # 创建管理对象
         conf = configparser.ConfigParser()
         # 读ini文件
-        conf.read(cfgpath, encoding="utf-8")  # python3
-        self.batch_index_max = int(conf.get("parameter", "batch_index_max"))
-        self.batch_size = int(conf.get("parameter", "batch_size"))
+        conf.read("cfg.ini")  # python3
+        self.batch_index_max = conf.getint("parameter", "batch_index_max")
+        self.batch_size = conf.getint("parameter", "batch_size")
 
     def split_data(self,
                    data_type: str,
@@ -157,6 +160,7 @@ class AVAImages:
                 print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
                 self.train_set_x = self.image_url[0: int(total * train_prob)]
                 self.train_set_y = self.score[0: int(total * train_prob)]
+                self.train_set_y = self.train_set_y[:, np.newaxis]
 
                 # url to image
                 print("loading test images ... {st}->{ed}".format(st=int(total * train_prob),
@@ -165,6 +169,7 @@ class AVAImages:
                     self.image_url[int(total * train_prob): int(total * (train_prob + test_prob))],
                     self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
                 )
+                self.test_set_y = self.test_set_y[:, np.newaxis]
                 print("loading validation images ... {st}->{ed}".format(
                     st=int(total * (train_prob + test_prob)), 
                     ed=int(total * (train_prob + test_prob + val_prob))))
@@ -174,6 +179,7 @@ class AVAImages:
                     self.score[int(total * (train_prob + test_prob)):
                                int(total * (train_prob + test_prob + val_prob))]
                 )
+                self.val_set_y = self.val_set_y[:, np.newaxis]
                 self.save_data(save_dir=save_dir)
         elif data_type == "score_bi":
             with open(filedir, "r") as f:
@@ -222,7 +228,7 @@ class AVAImages:
                 )
                 self.val_set_y = self.score[int(total * (train_prob + test_prob)):
                                             int(total * (train_prob + test_prob + val_prob))]
-                self.save_data(save_dir='AVA_data_score_bi/')
+                self.save_data(save_dir=save_dir)
                 self.cal_prob()
         elif data_type == "tag":
             with open(filedir, "r") as f:
@@ -269,7 +275,7 @@ class AVAImages:
                     self.cat[int(total * (train_prob + test_prob)):
                              int(total * (train_prob + test_prob + val_prob))]
                 )
-                self.save_data(save_dir='AVA_data_tag/')
+                self.save_data(save_dir=save_dir)
 
     def save_data(self, save_dir='AVA_data_score/'):
         with open(save_dir + "train_set_x.pkl", "wb") as f:
