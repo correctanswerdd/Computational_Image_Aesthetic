@@ -73,6 +73,9 @@ class AVAImages:
         if total % batch_size == 0:
             it -= 1
         self.batch_index_max = it  # it是最后一个batch的起始index
+
+        progress = ProgressBar(it)
+        progress.start()
         while i < it:
             train_block = self.urls_to_images_no_check(
                 self.train_set_x[i * batch_size: (i+1) * batch_size], flag=0)
@@ -81,9 +84,12 @@ class AVAImages:
             with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
                 pickle.dump(self.train_set_y[i * batch_size: (i+1) * batch_size], f)
             i += 1
+            progress.show_progress(i)
+        progress.end()
+
         print('last block!')
         train_block = self.urls_to_images_no_check(
-            self.train_set_x[i * batch_size: total])
+            self.train_set_x[i * batch_size: total], flag=0)
         with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
             pickle.dump(train_block, f)
         with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
