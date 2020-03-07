@@ -70,7 +70,9 @@ class AVAImages:
         i = 0
         total = self.train_set_x.shape[0]
         it = total // batch_size
-        self.batch_index_max = it
+        if total % batch_size == 0:
+            it -= 1
+        self.batch_index_max = it  # it是最后一个batch的起始index
         while i < it:
             train_block = self.urls_to_images_no_check(
                 self.train_set_x[i * batch_size: (i+1) * batch_size], flag=0)
