@@ -29,8 +29,9 @@ Total: about 250000 images
 <p align="center">
     <img src="./img/4.png" alt="Sample"  width="500">
   	<p align="center">
-    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">tags.txt文件存储格式/span></em>
+    	<em style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"><span id = "img1">tags.txt文件存储格式</span></em>
 </p>
+
 
 tag_id + tag_description
 
