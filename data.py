@@ -311,11 +311,12 @@ class AVAImages:
                 self.train_set_x = pickle.load(f)
             with open(read_dir + 'train_set_y.pkl', 'rb') as f:
                 self.train_set_y = pickle.load(f)
-        else:
+        if flag == 2:
             with open(read_dir + 'test_set_x.pkl', 'rb') as f:
                 self.test_set_x = pickle.load(f)
             with open(read_dir + 'test_set_y.pkl', 'rb') as f:
                 self.test_set_y = pickle.load(f)
+        else:
             with open(read_dir + 'val_set_x.pkl', 'rb') as f:
                 self.val_set_x = pickle.load(f)
             with open(read_dir + 'val_set_y.pkl', 'rb') as f:
