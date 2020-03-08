@@ -109,7 +109,7 @@ AVA dataset binary classification accuracy ~ 0.3
 
 3. Create training set with x_b-y_b-pair pkl in `./AVA_data_score_bi/train_raw` or `./AVA_data_score/train_raw`
    - `create_train_set.py`
-   - write `batch_size` and `batch_index_max`in `cfg.ini`
+   - write `batch_size`(<20) and `batch_index_max` to `cfg.ini`
 
 ### Training log
 
