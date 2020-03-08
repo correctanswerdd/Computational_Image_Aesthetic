@@ -81,7 +81,7 @@ Split data set 'score':
 
 ### Related codes
 
-`network.py` 
+`network_baseline.py` 
 
 ### Training log
 
