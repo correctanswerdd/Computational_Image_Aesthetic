@@ -63,7 +63,7 @@ class Network(object):
         x_val, y_val = real_data.val_set_x, real_data.val_set_y
         x, y = ph
         y_outputs = sess.run(y_outputs, feed_dict={x: x_val, y: y_val})
-        correct_prediction = tf.equal(y_outputs, y_val)
+        correct_prediction = tf.equal(tf.argmax(y_outputs, axis=1), tf.argmax(y_val, axis=1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
         return sess.run(accuracy)
 
@@ -72,7 +72,7 @@ class Network(object):
         x_b1, x_b2, y_b = self.create_cmp_batch(x_val, y_val)
         x1, x2, y = ph
         y_outputs = sess.run(y_outputs, feed_dict={x1: x_b1, x2: x_b2, y: y_b})
-        correct_prediction = tf.equal(y_outputs, y_val)
+        correct_prediction = tf.equal(tf.argmax(y_outputs, axis=1), tf.argmax(y_val, axis=1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
         return sess.run(accuracy)
 
