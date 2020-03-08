@@ -85,7 +85,7 @@ class Network(object):
                conf.getfloat("parameter", "learning_rate_decay"),\
                conf.getint("parameter", "epoch")
 
-    def train_baseline_net(self, model_save_path='./model_baseline/'):
+    def train_baseline_net(self, model_save_path='./model_baseline/', op_freq=10):
         dataset = AVAImages()
         dataset.read_data(read_dir='AVA_data_score_bi/', flag=0)
         dataset.read_batch_cfg()
@@ -117,8 +117,8 @@ class Network(object):
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker()
                     train_op_, loss_, step = sess.run([train_op, loss, global_step], feed_dict={x: x_b, y: y_b})
-                    if step % 1 == 0:
-                        print("training step {0}, loss {1}, validation loss {2}"
+                    if step % op_freq == 0:
+                        print("training step {0}, loss {1}, validation acc {2}"
                               .format(step, loss_, self.validation_acc(sess, y_outputs, ph, dataset)))
                         saver.save(sess, model_save_path + 'my_model', global_step=global_step)
                     if end == 1:
@@ -153,7 +153,7 @@ class Network(object):
 
         return x_b, x_b_re, y
 
-    def train_comparator(self, baseline_model='./model_baseline/', cmp_model='./model_cmp/'):
+    def train_comparator(self, baseline_model='./model_baseline/', cmp_model='./model_cmp/', op_freq=10):
         # data set
         dataset = AVAImages()
         dataset.read_data(read_dir='AVA_data_score/', flag=0)
@@ -209,8 +209,8 @@ class Network(object):
                     x_b1, x_b2, y_b = self.create_cmp_batch(x_b, y_b)
                     train_op_, loss_, step = sess.run([train_op, loss, global_step],
                                                       feed_dict={x1: x_b1, x2: x_b2, y: y_b})
-                    if step % 5 == 0:
-                        print("training step {0}, loss {1}, validation loss {2}"
+                    if step % op_freq == 0:
+                        print("training step {0}, loss {1}, validation acc {2}"
                               .format(step, loss_, self.validation_acc_2inputs(sess, output, ph, dataset)))
                         saver.save(sess, cmp_model + 'my_model', global_step=global_step)
                     if end == 1:
