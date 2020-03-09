@@ -85,9 +85,10 @@ class Network(object):
                conf.getfloat("parameter", "learning_rate_decay"),\
                conf.getint("parameter", "epoch")
 
-    def train_baseline_net(self, model_save_path='./model_baseline/', op_freq=10):
+    def train_baseline_net(self, model_save_path='./model_baseline/', op_freq=10, val=True):
         dataset = AVAImages()
-        dataset.read_data(read_dir='AVA_data_score_bi/', flag=0)
+        if val:
+            dataset.read_data(read_dir='AVA_data_score_bi/', flag=0)
         dataset.read_batch_cfg()
         learning_rate, learning_rate_decay, epoch = self.read_cfg()
         w, h, c = self.input_size
@@ -118,8 +119,11 @@ class Network(object):
                     x_b, y_b, end = dataset.load_next_batch_quicker()
                     train_op_, loss_, step = sess.run([train_op, loss, global_step], feed_dict={x: x_b, y: y_b})
                     if step % op_freq == 0:
-                        print("training step {0}, loss {1}, validation acc {2}"
-                              .format(step, loss_, self.validation_acc(sess, y_outputs, ph, dataset)))
+                        if val:
+                            print("training step {0}, loss {1}, validation acc {2}"
+                                  .format(step, loss_, self.validation_acc(sess, y_outputs, ph, dataset)))
+                        else:
+                            print("training step {0}, loss {1}".format(step, loss_))
                         saver.save(sess, model_save_path + 'my_model', global_step=global_step)
                     if end == 1:
                         break

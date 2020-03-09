@@ -9,7 +9,7 @@ def main(_):
     net = Network(input_size=(224, 224, 3),
                   output_size=2,
                   net="predict_bi_class")
-    net.train_baseline_net(op_freq=10)
+    net.train_baseline_net(op_freq=10, val=True)
 
 
 if __name__ == '__main__':
