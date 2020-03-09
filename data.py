@@ -284,6 +284,49 @@ class AVAImages:
                              int(total * (train_prob + test_prob + val_prob))]
                 )
                 self.save_data(save_dir=save_dir)
+        elif data_type == "style":
+            # filedir='AVA_dataset/style_image_lists/'
+            # save_dir='AVA_data_style/'
+            # train_prob=0.9, val_prob=1-train_prob
+            with open(filedir + "train.jpgl", "r") as f:
+                set_x = np.array(f.readlines())
+            with open(filedir + "train.lab", "r") as f:
+                set_y = np.array(f.readlines())
+            with open(filedir + "test.jpgl", "r") as f:
+                self.test_set_x = np.array(f.readlines())
+            with open(filedir + "test.multilab", "r") as f:
+                self.test_set_y = np.array(f.readlines())
+
+            # shuffle
+            total = self.test_set_x.shape[0]
+            index = [i for i in range(total)]
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            self.test_set_x = self.test_set_x[index]
+            self.test_set_y = self.test_set_y[index]
+            total = set_x.shape[0]
+            index = [i for i in range(total)]
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            set_x = set_x[index]
+            set_y = set_y[index]
+
+            # split
+            print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
+            self.train_set_x = set_x[0: int(total * train_prob)]
+            self.train_set_y = set_y[0: int(total * train_prob)]
+
+            # url to image
+            print("loading test images ... {st}->{ed}".format(st=0, ed=self.test_set_x.shape[0]))
+            self.test_set_x = self.urls_to_images_no_check(self.test_set_x, flag=1)
+
+            print("loading validation images ... {st}->{ed}".format(st=int(total * train_prob), ed=total))
+            self.val_set_x = self.urls_to_images_no_check(set_x[int(total * train_prob): total], flag=1)
+            self.val_set_y = set_y[int(total * train_prob): total]
+            
+            self.save_data(save_dir=save_dir)
 
     def save_data(self, save_dir='AVA_data_score/'):
         with open(save_dir + "train_set_x.pkl", "wb") as f:
