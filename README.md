@@ -122,4 +122,11 @@ AVA dataset binary classification accuracy ~ 0.3
    - dataset-inputs: (?, 224, 224, 3) & (?, 224, 224, 3); dataset-outputs: (?, 3)
    - `train_comparator.py`
    
-     
+## Aesthetic Network v2
+
+### Data set
+1. Check data set: remove lines with empty url in `train.jpgl` + `test.jpgl`  & create new url file `train_check.txt` + `test_check.txt`
+   - `check_data.py`
+
+2. Split data set -> train set(url only) & test set & validation set in `./AVA_data_style` 
+   - `create_data.py`
