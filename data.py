@@ -302,20 +302,25 @@ class AVAImages:
             self.val_set_y = set_y[int(total * train_prob): total]
 
             self.save_data(save_dir=save_dir)
-        elif data_type == "score_mean_and_var":
+        elif data_type == "score_mean_var_style":
             self.create_index2score_mean_and_var()
+            style = np.eye(14)
             with open(filedir + "train.jpgl", "r") as f:
                 set_x = f.readlines()
                 mean = np.array([self.index2score_mean[i] for i in set_x])
                 var = np.array([self.index2score_var[i] for i in set_x])
+                with open(filedir + "train.lab", "r") as f:
+                    sty = np.array([style[i] for i in f.readlines()])
                 set_x = np.array(set_x)
-                set_y = np.hstack((mean, var))
+                set_y = np.hstack((mean, var, sty))
             with open(filedir + "test.jpgl", "r") as f:
                 test_x = f.readlines()
                 mean = np.array([self.index2score_mean[i] for i in test_x])
                 var = np.array([self.index2score_var[i] for i in test_x])
+                with open(filedir + "test.multilab", "r") as f:
+                    sty = np.array([style[i] for i in f.readlines()])
                 self.test_set_x = np.array(test_x)
-                self.test_set_y = np.hstack((mean, var))
+                self.test_set_y = np.hstack((mean, var, sty))
 
             # shuffle
             total = self.test_set_x.shape[0]
@@ -441,18 +446,22 @@ class AVAImages:
             # filedir='AVA_dataset/style_image_lists/'
             # save_dir='AVA_score_style/'
             # train_prob=0.9, val_prob=1-train_prob
-            self.create_index2score_dis()
+            style = np.eye(14)
+            self.create_index2score_mean_and_var()
             with open(filedir + "train.jpgl", "r") as f:
                 lines = f.readlines()
-                set_x = np.array([self.index2score_dis[i] for i in lines])
+                mean = np.array([self.index2score_mean[i] for i in lines])
+                var = np.array([self.index2score_var[i] for i in lines])
+                set_x = np.hstack((mean, var))
             with open(filedir + "train.lab", "r") as f:
-                set_y = np.array(f.readlines())
+                set_y = np.array([style[i] for i in f.readlines()])
             with open(filedir + "test.jpgl", "r") as f:
                 lines = f.readlines()
-                test_x = [self.index2score_dis[i] for i in lines]
-                self.test_set_x = np.array(test_x)
+                mean = np.array([self.index2score_mean[i] for i in lines])
+                var = np.array([self.index2score_var[i] for i in lines])
+                self.test_set_x = np.hstack((mean, var))
             with open(filedir + "test.multilab", "r") as f:
-                self.test_set_y = np.array(f.readlines())
+                self.test_set_y = np.array([style[i] for i in f.readlines()])
 
             # shuffle
             total = self.test_set_x.shape[0]

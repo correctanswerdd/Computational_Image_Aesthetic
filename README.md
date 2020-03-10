@@ -128,5 +128,20 @@ AVA dataset binary classification accuracy ~ 0.3
 1. Check data set: remove lines with empty url in `train.jpgl` + `test.jpgl`  & create new url file `train_check.txt` + `test_check.txt`
    - `check_data.py`
 
-2. Split data set -> train set(url only) & test set & validation set in `./AVA_data_style` 
+2. Split data set -> train set(url only) & test set & validation set in `./AVA_data_mean_var_style` 
    - `create_data.py`
+
+3. Create training set with x_b-y_b-pair pkl in `./AVA_data_mean_var_style/train_raw`
+   - `create_train_set.py`
+   - write `batch_size`(32) and `batch_index_max` to `cfg.ini`
+
+### Training log
+
+1. score2style network. Then save weights in `./model_score2style`
+   - dataset-inputs: (?, 2); dataset-outputs: (?, 14)
+   
+   - `train_score2style.py`
+
+2. multi_task. Then save weights in `./model_ulti`
+   - dataset-inputs: (?, 224, 224, 3) ; dataset-outputs: (?, 16)
+   - `train_multitask.py`
