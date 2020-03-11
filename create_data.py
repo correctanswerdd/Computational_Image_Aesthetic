@@ -1,14 +1,20 @@
 from data import AVAImages
 
 if __name__ == '__main__':
-    # dataset1 = AVAImages()
-    # dataset1.split_data('tag')
-    # dataset2 = AVAImages()
-    # dataset2.split_data('score')
     dataset = AVAImages()
-    dataset.split_data(data_type='score',
-                       filedir="AVA_dataset/AVA_check.txt",
-                       save_dir='AVA_data_score/',
-                       train_prob=0.9,
+    """
+    data type:
+    * score
+    * score_bi
+    * score_dis
+    * score_mean_var_style
+    * tag
+    * style
+    * score_and_style
+    """
+    dataset.split_data(data_type='score_mean_var_style',
+                       filedir="AVA_dataset/style_image_lists/",
+                       save_dir='AVA_data_score_mean_var_style/',
+                       train_prob=0.99,
                        test_prob=0.05,
-                       val_prob=0.05)
+                       val_prob=0.01)

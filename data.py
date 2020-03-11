@@ -68,6 +68,10 @@ class AVAImages:
     def create_train_set(self, batch_size,
                          read_dir='AVA_data_score_bi/',
                          train_set_dir='train_raw/'):
+        folder = os.path.exists(read_dir + train_set_dir)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(read_dir + train_set_dir)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
         self.batch_size = batch_size
         self.read_data(read_dir=read_dir, flag=1)  # training set only
 
@@ -143,8 +147,8 @@ class AVAImages:
             for line in lines:
                 seg = line.split(" ")
                 seg = list(map(int, seg))
-                self.index2score_mean[seg[1]] = np.mean(seg[2: 12])
-                self.index2score_var[seg[1]] = np.var(seg[2: 12])
+                self.index2score_mean[seg[1]] = self.cal_mean(seg[2: 12])
+                self.index2score_var[seg[1]] = self.cal_var(seg[2: 12], self.index2score_mean[seg[1]])
 
     def split_data(self,
                    data_type: str,
@@ -171,7 +175,7 @@ class AVAImages:
                     seg = line.split(" ")
                     seg = list(map(int, seg))
                     self.image_url.append(seg[1])
-                    self.score.append(np.mean(seg[2:12]))
+                    self.score.append(self.cal_mean(seg[2:12]))
 
                 # to array
                 self.image_url = np.array(self.image_url)
@@ -218,7 +222,7 @@ class AVAImages:
                     seg = line.split(" ")
                     seg = list(map(int, seg))
                     self.image_url.append(seg[1])
-                    if np.mean(seg[2:12]) >= 5:
+                    if self.cal_mean(seg[2:12]) >= 5:
                         self.score.append([0, 1])
                     else:
                         self.score.append([1, 0])
@@ -266,7 +270,7 @@ class AVAImages:
             # train_prob = 0.9, val_prob = 1 - train_prob
             self.create_index2score_dis()
             with open(filedir + "train.jpgl", "r") as f:
-                set_x = np.array(f.readlines())
+                set_x = np.array(f.readlines(), dtype=int)
                 set_y = np.array([self.index2score_dis[i] for i in set_x])
             with open(filedir + "test.jpgl", "r") as f:
                 self.test_set_x = np.array(f.readlines())
@@ -303,24 +307,34 @@ class AVAImages:
 
             self.save_data(save_dir=save_dir)
         elif data_type == "score_mean_var_style":
+            # filedir = "AVA_dataset/style_image_lists/",
+            # save_dir = 'AVA_data_score_mean_var_style/',
+            # train_prob = 0.9,
             self.create_index2score_mean_and_var()
             style = np.eye(14)
-            with open(filedir + "train.jpgl", "r") as f:
+            with open(filedir + "train.txt", "r") as f:
                 set_x = f.readlines()
-                mean = np.array([self.index2score_mean[i] for i in set_x])
-                var = np.array([self.index2score_var[i] for i in set_x])
-                with open(filedir + "train.lab", "r") as f:
-                    sty = np.array([style[i] for i in f.readlines()])
-                set_x = np.array(set_x)
-                set_y = np.hstack((mean, var, sty))
-            with open(filedir + "test.jpgl", "r") as f:
+            mean = np.array([self.index2score_mean[int(i[0:-2])] for i in set_x])[:, np.newaxis]
+            var = np.array([self.index2score_var[int(i[0:-2])] for i in set_x])[:, np.newaxis]
+            with open(filedir + "train_y.txt", "r") as f:
+                lines = f.readlines()
+                sty = np.array([style[int(i[0: -1]) - 1] for i in lines])
+            set_x = np.array(set_x, dtype=int)
+            set_y = np.hstack((mean, var, sty))
+            with open(filedir + "test.txt", "r") as f:
                 test_x = f.readlines()
-                mean = np.array([self.index2score_mean[i] for i in test_x])
-                var = np.array([self.index2score_var[i] for i in test_x])
-                with open(filedir + "test.multilab", "r") as f:
-                    sty = np.array([style[i] for i in f.readlines()])
-                self.test_set_x = np.array(test_x)
-                self.test_set_y = np.hstack((mean, var, sty))
+            mean = np.array([self.index2score_mean[int(i[0:-2])] for i in test_x])[:, np.newaxis]
+            var = np.array([self.index2score_var[int(i[0:-2])] for i in test_x])[:, np.newaxis]
+            with open(filedir + "test_y.txt", "r") as f:
+                lines = f.readlines()
+                sty = []
+                for line in lines:
+                    seg = line.split(" ")
+                    seg = list(map(int, seg))
+                    sty.append(seg)
+                sty = np.array(sty)
+            self.test_set_x = np.array(test_x, dtype=int)
+            self.test_set_y = np.hstack((mean, var, sty))
 
             # shuffle
             total = self.test_set_x.shape[0]
@@ -490,7 +504,38 @@ class AVAImages:
 
             self.save_data(save_dir=save_dir)
 
+    def cal_mean(self, score_distribution: list):
+        """以均分作为图像的分数"""
+        total = score_distribution[0] * 1 \
+                + score_distribution[1] * 2 \
+                + score_distribution[2] * 3 \
+                + score_distribution[3] * 4 \
+                + score_distribution[4] * 5 \
+                + score_distribution[5] * 6 \
+                + score_distribution[6] * 7 \
+                + score_distribution[7] * 8 \
+                + score_distribution[8] * 9 \
+                + score_distribution[9] * 10
+        return total / sum(score_distribution)
+
+    def cal_var(self, score_distribution: list, mean):
+        total = score_distribution[0] * (1 - mean) ** 2 \
+                + score_distribution[1] * (2 - mean) ** 2 \
+                + score_distribution[2] * (3 - mean) ** 2 \
+                + score_distribution[3] * (4 - mean) ** 2 \
+                + score_distribution[4] * (5 - mean) ** 2 \
+                + score_distribution[5] * (6 - mean) ** 2 \
+                + score_distribution[6] * (7 - mean) ** 2 \
+                + score_distribution[7] * (8 - mean) ** 2 \
+                + score_distribution[8] * (9 - mean) ** 2 \
+                + score_distribution[9] * (10 - mean) ** 2
+        return total / sum(score_distribution)
+    
     def save_data(self, save_dir='AVA_data_score/'):
+        folder = os.path.exists(save_dir)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(save_dir)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
         with open(save_dir + "train_set_x.pkl", "wb") as f:
             pickle.dump(self.train_set_x, f)
         with open(save_dir + "train_set_y.pkl", "wb") as f:
