@@ -5,10 +5,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def main(_):
-    net = Network(input_size=(224, 224, 3),
-                  output_size=16,
-                  net="multitask")
-    net.train_multi_task(op_freq=10, val=True)
+    net = Network(input_size=(227, 227, 3),
+                  output_size=24,
+                  net="ultimate")
+    net.train_MTCNN(op_freq=10, val=True)
 
 
 if __name__ == '__main__':

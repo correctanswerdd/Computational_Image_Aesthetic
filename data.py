@@ -66,6 +66,8 @@ class AVAImages:
                 print("finish checking " + filedir + " and create file " + newfiledir)
 
     def create_train_set(self, batch_size,
+                         size=224,
+                         if_write=True,
                          read_dir='AVA_data_score_bi/',
                          train_set_dir='train_raw/'):
         folder = os.path.exists(read_dir + train_set_dir)
@@ -86,7 +88,7 @@ class AVAImages:
         progress.start()
         while i < it:
             train_block = self.urls_to_images_no_check(
-                self.train_set_x[i * batch_size: (i+1) * batch_size], flag=0)
+                self.train_set_x[i * batch_size: (i+1) * batch_size], size=size, flag=0)
             with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
                 pickle.dump(train_block, f)
             with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
@@ -97,13 +99,14 @@ class AVAImages:
 
         print('last block!')
         train_block = self.urls_to_images_no_check(
-            self.train_set_x[i * batch_size: total], flag=0)
+            self.train_set_x[i * batch_size: total], size=size, flag=0)
         with open(read_dir + train_set_dir + "train_set_x_" + str(i) + ".pkl", "wb") as f:
             pickle.dump(train_block, f)
         with open(read_dir + train_set_dir + "train_set_y_" + str(i) + ".pkl", "wb") as f:
             pickle.dump(self.train_set_y[i * batch_size: total], f)
 
-        self.write_conf()
+        if if_write:
+            self.write_conf()
 
     def create_conf(self):
         # 创建管理对象
@@ -306,10 +309,69 @@ class AVAImages:
             self.val_set_y = set_y[int(total * train_prob): total]
 
             self.save_data(save_dir=save_dir)
+        elif data_type == "score_dis_style":
+            # filedir = "AVA_dataset/style_image_lists/",
+            # save_dir = 'AVA_data_score_dis_style/',
+            # train_prob = 0.9, test_prob = 0.2
+            self.create_index2score_dis()
+            style = np.eye(14)
+            with open(filedir + "train.txt", "r") as f:
+                set_x = f.readlines()
+            dis = np.array([self.index2score_dis[int(i[0:-2])] for i in set_x])
+            with open(filedir + "train_y.txt", "r") as f:
+                lines = f.readlines()
+                sty = np.array([style[int(i[0: -1]) - 1] for i in lines])
+            set_x = np.array(set_x, dtype=int)
+            set_y = np.hstack((dis, sty))
+            with open(filedir + "test.txt", "r") as f:
+                test_x = f.readlines()
+            dis = np.array([self.index2score_dis[int(i[0:-2])] for i in test_x])
+            with open(filedir + "test_y.txt", "r") as f:
+                lines = f.readlines()
+                sty = []
+                for line in lines:
+                    seg = line.split(" ")
+                    seg = list(map(int, seg))
+                    sty.append(seg)
+                sty = np.array(sty)
+            self.test_set_x = np.array(test_x, dtype=int)
+            self.test_set_y = np.hstack((dis, sty))
+
+            # shuffle
+            total = self.test_set_x.shape[0]
+            index = [i for i in range(total)]
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            index = index[0: int(total * test_prob)]
+            self.test_set_x = self.test_set_x[index]
+            self.test_set_y = self.test_set_y[index]
+            total = set_x.shape[0]
+            index = [i for i in range(total)]
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            np.random.shuffle(index)
+            set_x = set_x[index]
+            set_y = set_y[index]
+
+            # split
+            print("train set: 0->{end}/{total}".format(end=int(total * train_prob), total=total))
+            self.train_set_x = set_x[0: int(total * train_prob)]
+            self.train_set_y = set_y[0: int(total * train_prob)]
+
+            # url to image
+            print("loading test images ... {st}->{ed}".format(st=0, ed=self.test_set_x.shape[0]))
+            self.test_set_x = self.urls_to_images_no_check(self.test_set_x, size=227, flag=1)
+
+            print("loading validation images ... {st}->{ed}".format(st=int(total * train_prob), ed=total))
+            self.val_set_x = self.urls_to_images_no_check(set_x[int(total * train_prob): total], size=227, flag=1)
+            self.val_set_y = set_y[int(total * train_prob): total]
+
+            self.save_data(save_dir=save_dir, save_train=True, save_test=True, save_val=True)
         elif data_type == "score_mean_var_style":
             # filedir = "AVA_dataset/style_image_lists/",
             # save_dir = 'AVA_data_score_mean_var_style/',
-            # train_prob = 0.9,
+            # train_prob = 0.9, test_prob = 0.2
             self.create_index2score_mean_and_var()
             style = np.eye(14)
             with open(filedir + "train.txt", "r") as f:
@@ -342,6 +404,7 @@ class AVAImages:
             np.random.shuffle(index)
             np.random.shuffle(index)
             np.random.shuffle(index)
+            index = index[0: int(total * test_prob)]
             self.test_set_x = self.test_set_x[index]
             self.test_set_y = self.test_set_y[index]
             total = set_x.shape[0]
@@ -365,7 +428,7 @@ class AVAImages:
             self.val_set_x = self.urls_to_images_no_check(set_x[int(total * train_prob): total], flag=1)
             self.val_set_y = set_y[int(total * train_prob): total]
 
-            self.save_data(save_dir=save_dir)
+            self.save_data(save_dir=save_dir, save_train=False, save_test=True, save_val=False)
         elif data_type == "tag":
             with open(filedir, "r") as f:
                 lines = f.readlines()
@@ -531,23 +594,26 @@ class AVAImages:
                 + score_distribution[9] * (10 - mean) ** 2
         return total / sum(score_distribution)
     
-    def save_data(self, save_dir='AVA_data_score/'):
+    def save_data(self, save_dir='AVA_data_score/', save_train=True, save_test=True, save_val=True):
         folder = os.path.exists(save_dir)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(save_dir)  # makedirs 创建文件时如果路径不存在会创建这个路径
 
-        with open(save_dir + "train_set_x.pkl", "wb") as f:
-            pickle.dump(self.train_set_x, f)
-        with open(save_dir + "train_set_y.pkl", "wb") as f:
-            pickle.dump(self.train_set_y, f)
-        with open(save_dir + "test_set_x.pkl", "wb") as f:
-            pickle.dump(self.test_set_x, f)
-        with open(save_dir + "test_set_y.pkl", "wb") as f:
-            pickle.dump(self.test_set_y, f)
-        with open(save_dir + "val_set_x.pkl", "wb") as f:
-            pickle.dump(self.val_set_x, f)
-        with open(save_dir + "val_set_y.pkl", "wb") as f:
-            pickle.dump(self.val_set_y, f)
+        if save_train:
+            with open(save_dir + "train_set_x.pkl", "wb") as f:
+                pickle.dump(self.train_set_x, f)
+            with open(save_dir + "train_set_y.pkl", "wb") as f:
+                pickle.dump(self.train_set_y, f)
+        if save_test:
+            with open(save_dir + "test_set_x.pkl", "wb") as f:
+                pickle.dump(self.test_set_x, f)
+            with open(save_dir + "test_set_y.pkl", "wb") as f:
+                pickle.dump(self.test_set_y, f)
+        if save_val:
+            with open(save_dir + "val_set_x.pkl", "wb") as f:
+                pickle.dump(self.val_set_x, f)
+            with open(save_dir + "val_set_y.pkl", "wb") as f:
+                pickle.dump(self.val_set_y, f)
 
     def read_data(self, read_dir='AVA_data_score/', flag=0):
         """
@@ -572,7 +638,7 @@ class AVAImages:
             with open(read_dir + 'val_set_y.pkl', 'rb') as f:
                 self.val_set_y = pickle.load(f)
 
-    def urls_to_images_no_check(self, urls, file_dir='AVA_dataset/images/', flag=1):
+    def urls_to_images_no_check(self, urls, file_dir='AVA_dataset/images/', size=224, flag=1):
         images = []
         i = 0
 
@@ -581,7 +647,7 @@ class AVAImages:
             progress.start()
             for url in urls:
                 img = cv2.imread(file_dir + str(url) + ".jpg")
-                img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_CUBIC)
+                img = cv2.resize(img, (size, size), interpolation=cv2.INTER_CUBIC)
                 images.append(img)
                 i += 1
                 progress.show_progress(i)
@@ -589,7 +655,7 @@ class AVAImages:
         else:
             for url in urls:
                 img = cv2.imread(file_dir + str(url) + ".jpg")
-                img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_CUBIC)
+                img = cv2.resize(img, (size, size), interpolation=cv2.INTER_CUBIC)
                 images.append(img)
                 i += 1
         return np.array(images) / 225.

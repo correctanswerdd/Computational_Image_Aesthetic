@@ -1,16 +1,13 @@
 import tensorflow as tf
-from network import Network
-from data import AVAImages
+from network_v2 import Network
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def main(_):
-    dataset = AVAImages("score")
     net = Network(input_size=(224, 224, 3),
-                  output_size=1,
-                  net="predict_score")
-    net.eval_binary_acc(dataset=dataset)
+                  output_size=16,
+                  net="ultimate")
+    net.eval_binary_acc()
 
 
 if __name__ == '__main__':

@@ -519,16 +519,16 @@ def resnet_v2_4x4(inputs,
                   reuse=None,
                   scope='resnet_v2_aes'):
     blocks = [
-        resnet_v2_block('block1', base_depth=64, num_units=3, stride=2),
-        resnet_v2_block('block2', base_depth=128, num_units=4, stride=2),
-        resnet_v2_block('block3', base_depth=256, num_units=6, stride=2),
+        resnet_v2_block('block1', base_depth=16, num_units=3, stride=2),
+        resnet_v2_block('block2', base_depth=32, num_units=4, stride=2),
+        resnet_v2_block('block3', base_depth=64, num_units=6, stride=2),
     ]
 
-    block4 = [resnet_v2_block('block4', base_depth=512, num_units=3, stride=2)]
-    block4_11 = [resnet_v2_block('block4_11', base_depth=512, num_units=3, stride=2)]
-    block4_12 = [resnet_v2_block('block4_12', base_depth=512, num_units=3, stride=2)]
-    block4_21 = [resnet_v2_block('block4_21', base_depth=512, num_units=3, stride=2)]
-    block4_22 = [resnet_v2_block('block4_22', base_depth=512, num_units=3, stride=2)]
+    block4 = [resnet_v2_block('block4', base_depth=64, num_units=3, stride=2)]
+    block4_11 = [resnet_v2_block('block4_11', base_depth=64, num_units=3, stride=2)]
+    block4_12 = [resnet_v2_block('block4_12', base_depth=64, num_units=3, stride=2)]
+    block4_21 = [resnet_v2_block('block4_21', base_depth=64, num_units=3, stride=2)]
+    block4_22 = [resnet_v2_block('block4_22', base_depth=64, num_units=3, stride=2)]
 
     return res_v2_aes(inputs, blocks, block4, block4_11, block4_12, block4_21, block4_22, is_training, num_classes,
                       global_pool=global_pool, output_stride=output_stride,
