@@ -54,8 +54,8 @@ class Network(object):
             l6 = slim.fully_connected(l5, 4096)
 
         with tf.variable_scope("W"):
-            l7_score = slim.fully_connected(l6, 10, name='a')
-            l7_style = slim.fully_connected(l6, 14, name='s')
+            l7_score = slim.fully_connected(l6, 10)
+            l7_style = slim.fully_connected(l6, 14)
         return tf.concat([l7_score, l7_style], axis=1, name='concat')
 
     def eval_binary_acc(self, model_path='./model_ulti/'):
@@ -211,14 +211,30 @@ class Network(object):
         Y = tf.distributions.Categorical(probs=y_add)
         return tf.distributions.kl_divergence(X, Y)
 
+    def mu(self, x):
+        one = tf.ones([1, 1])
+        result = tf.cond(pred=tf.less(x, 0.1),
+                         true_fn=lambda: tf.divide(tf.log(tf.add(x, 1)), tf.add(tf.log(tf.add(x, 1)), 1)),
+                         false_fn=lambda: one)
+        return result
+
+    def kurtosis(self, x):
+        mean, variance = tf.nn.moments(x, axes=1)
+        return tf.reduce_mean(tf.subtract(tf.divide(tf.reduce_sum(tf.pow(tf.subtract(x, mean), 4), axis=1),
+                                     tf.multiply(tf.square(variance), tf.cast(tf.shape(x)[1], tf.float32))), 3))
+
+    def r_kurtosis(self, y_outputs):
+        ty = tf.divide(1, tf.abs(tf.subtract(self.kurtosis(y_outputs), 3)))
+        return self.mu(ty)
+
     def distribution_loss(self, y_outputs, y):
         ym = tf.multiply(0.5, tf.add(y_outputs, y))
         jsd = tf.add(tf.multiply(0.5, self.KLD(y_outputs, ym)),
                      tf.multiply(0.5, self.KLD(y, ym)))
-        return jsd
+        return tf.multiply(self.r_kurtosis(y_outputs), jsd)
 
     def style_loss(self, y_outputs, y):
-        entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_outputs[:, 10:], labels=y[:, 10:])
+        entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_outputs, labels=y)
         return tf.reduce_mean(entropy)
 
     def sum_theta_and_W(self):
@@ -250,22 +266,20 @@ class Network(object):
 
     def tr_W(self):
         var = tf.trainable_variables()
-        for v in var:
-            if "W" and "a" in v.name:
-                wa = v
-            elif "W" and "s" in v.name:
-                ws = v
+        wa = tf.get_default_graph().get_tensor_by_name('W/fully_connected/weights:0')
+        ws = tf.get_default_graph().get_tensor_by_name('W/fully_connected_1/weights:0')
         W = tf.concat([wa, ws], axis=1)
-        omega = tf.sqrt(tf.matmul(tf.transpose(W), W))
+        omega = tf.divide(tf.sqrt(tf.matmul(tf.transpose(W), W)), tf.linalg.trace(tf.sqrt(tf.matmul(tf.transpose(W), W))))
+        return tf.linalg.trace(tf.matmul(tf.matmul(W, omega), tf.transpose(W)))
 
-    def train_MTCNN(self, model_save_path='./model_MTCNN/', op_freq=10, val=True):
+    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', op_freq=10, val=True):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
 
         dataset = AVAImages()
         if val:
-            dataset.read_data(read_dir='AVA_data_score_mean_var_style/', flag=0)
+            dataset.read_data(read_dir=data, flag=0)
         dataset.read_batch_cfg()
         learning_rate, learning_rate_decay, epoch, a, b, c, d = self.read_cfg()
         w, h, c = self.input_size
@@ -274,12 +288,19 @@ class Network(object):
             y = tf.placeholder(tf.float32, [None, self.output_size])
             ph = x, y
         y_outputs = self.MTCNN(x, True)  # y_outputs = (None, 2)
-        y_mv = self.score2style(y_outputs[:, 0: 2])
+        y_mv = self.score2style(y_outputs[:, 0: 10])
         global_step = tf.Variable(0, trainable=False)
 
         with tf.name_scope("Loss"):
-            loss = self.distribution_loss(y_outputs, y) + 1/14 * self.style_loss(y_outputs, y) \
-                   + tf.contrib.layers.l2_regularizer(0.1)(tf.trainable_variables())
+
+            loss = tf.add_n([self.distribution_loss(y_outputs[:, 0: 10], y[:, 0: 10]),
+                             tf.multiply(1 / 14, self.style_loss(y_outputs[:, 10:], y[:, 10:])),
+                             tf.contrib.layers.apply_regularization(
+                                 regularizer=tf.contrib.layers.l2_regularizer(a, scope=None),
+                                 weights_list=tf.trainable_variables()),
+                             self.tr_W(),
+                             tf.multiply(b, self.style_loss(y_mv, y[:, 10:]))
+                             ])
         with tf.name_scope("Train"):
             rate = tf.train.exponential_decay(learning_rate, global_step, 200, learning_rate_decay)  # 指数衰减学习率
             train_op = tf.train.AdamOptimizer(rate).minimize(loss, global_step=global_step)
@@ -290,7 +311,7 @@ class Network(object):
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir='AVA_data_score_mean_var_style/')
+                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     train_op_, loss_, step = sess.run([train_op, loss, global_step],
                                                       feed_dict={x: x_b, y: y_b})
                     if step % op_freq == 0:

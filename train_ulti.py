@@ -8,7 +8,7 @@ def main(_):
     net = Network(input_size=(227, 227, 3),
                   output_size=24,
                   net="ultimate")
-    net.train_MTCNN(op_freq=10, val=True)
+    net.train_MTCNN(op_freq=1, val=False)
 
 
 if __name__ == '__main__':
