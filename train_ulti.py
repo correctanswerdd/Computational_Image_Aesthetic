@@ -1,7 +1,7 @@
 import tensorflow as tf
 from network_v2 import Network
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
 def main(_):
