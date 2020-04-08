@@ -110,7 +110,7 @@ class AVAImages:
         if if_write:
             self.write_conf()
 
-    def create_setx_for_Th(self, read_dir='AVA_data_score_dis_style/', Th_prob=0.01):
+    def create_setx_for_Th(self, read_dir='AVA_data_score_dis_style/', size=227, Th_prob=0.01):
         self.read_data(read_dir=read_dir, flag="train")  # training set only
         total = self.train_set_x.shape[0]
         index = [i for i in range(total)]
@@ -119,7 +119,7 @@ class AVAImages:
         np.random.shuffle(index)
         setx = self.train_set_x[0: int(total * Th_prob)]
         sety = self.train_set_y[0: int(total * Th_prob)]
-        setx = self.urls_to_images_no_check(setx, size=227, flag=0)
+        setx = self.urls_to_images_no_check(setx, size=size, flag=0)
         with open(read_dir + "Th_x.pkl", "wb") as f:
             pickle.dump(setx, f)
         with open(read_dir + "Th_y.pkl", "wb") as f:
@@ -142,7 +142,7 @@ class AVAImages:
         # 往修改某key的value
         conf.set("parameter", "batch_index_max", str(self.batch_index_max))
         conf.set("parameter", "batch_size", str(self.batch_size))
-        conf.write(open("cfg.ini", "a"))  # 删除原文件重新写入   "a"是追加模式
+        conf.write(open("cfg.ini", "w"))  # 删除原文件重新写入   "a"是追加模式
 
     def read_batch_cfg(self):
         # 创建管理对象
@@ -285,7 +285,7 @@ class AVAImages:
                 self.save_data(save_dir=save_dir)
                 self.cal_prob()
         elif data_type == "score_dis":
-            # filedir='AVA_dataset/style_image_lists/'
+            # filedir="AVA_dataset/AVA.txt"
             # save_dir = 'AVA_data_score_dis/',
             # train_prob = 0.9, val_prob = 1 - train_prob
             with open(filedir, "r") as f:
@@ -320,6 +320,7 @@ class AVAImages:
                                                                   ed=int(total * (train_prob + test_prob))))
                 self.test_set_x = self.urls_to_images_no_check(
                     self.image_url[int(total * train_prob): int(total * (train_prob + test_prob))],
+                    size=227
                 )
                 self.test_set_y = self.score[int(total * train_prob): int(total * (train_prob + test_prob))]
 
@@ -329,11 +330,11 @@ class AVAImages:
                 self.val_set_x = self.urls_to_images_no_check(
                     self.image_url[int(total * (train_prob + test_prob)):
                                    int(total * (train_prob + test_prob + val_prob))],
+                    size=227
                 )
                 self.val_set_y = self.score[int(total * (train_prob + test_prob)):
                                             int(total * (train_prob + test_prob + val_prob))]
                 self.save_data(save_dir=save_dir)
-                self.cal_prob()
         elif data_type == "score_dis_style":
             # filedir = "AVA_dataset/style_image_lists/",
             # save_dir = 'AVA_data_score_dis_style/',

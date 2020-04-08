@@ -435,7 +435,25 @@ class Network(object):
         result = tf.linalg.trace(tf.matmul(tf.matmul(W, tf.matrix_inverse(o)), tf.transpose(W)))
         return result
 
-    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', op_freq=10, val=True):
+    def update_omega(self, W):
+        A = tf.matmul(tf.transpose(W), W)
+        eigval, eigvec = tf.self_adjoint_eig(A)
+        eigval = tf.matrix_diag(tf.sqrt(eigval))
+        A_sqrt = tf.matmul(tf.matmul(tf.matrix_inverse(eigvec), eigval), eigvec)
+        return tf.divide(A_sqrt, tf.linalg.trace(A_sqrt))
+
+    def scalar_for_weights(self, grad, var, omega, taskid):
+        # 'W/fully_connected_1/weights:0'
+        # w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
+        if var.name[0] == 'W':
+            if var.name == 'W/fully_connected/weights:0' or var.name == 'W/fully_connected/biases:0':
+                grad = tf.multiply(grad, omega[taskid][0])
+            else:
+                s = int(var.name[18])
+                grad = tf.multiply(grad, omega[taskid][s])
+        return grad
+
+    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', op_freq=10, val=True, task_marg=10, fix_marg=10):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
@@ -444,7 +462,7 @@ class Network(object):
         if val:
             dataset.read_data(read_dir=data, flag="val")
         dataset.read_data(read_dir=data, flag="Th")
-        dataset.Th_y[:, 0: 10] = self.fixprob(dataset.Th_y[:, 0: 10])
+        dataset.Th_y[:, 0: fix_marg] = self.fixprob(dataset.Th_y[:, 0: fix_marg])
         dataset.read_batch_cfg()
         learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta, switch = self.read_cfg()
         w, h, c = self.input_size
@@ -455,17 +473,18 @@ class Network(object):
             task_id = tf.placeholder(tf.int32)
             ph = x, y
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
-        y_outputs = tf.transpose(tf.concat(y_list, axis=1))
+        y_outputs = tf.concat(y_list, axis=1)
         # y_mv = self.score2style(y_outputs[:, 0: 10])
         global_step = tf.Variable(0, trainable=False)
+        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
-            cross_val_loss = self.JSD(y_outputs[:, 0:10], y[:, 0: 10])
+            cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
             W = self.get_W()
             omega = self.ini_omega(self.output_size)
             tr_W_omega_WT = self.tr(W, omega)
-            loss = self.distribution_loss(y_outputs[:, 0: 10], y[:, 0: 10], th) + \
-                   gamma * self.style_loss(y_outputs[:, 10:], y[:, 10:]) + \
+            loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th) + \
+                   gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) + \
                    tf.contrib.layers.apply_regularization(
                        regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                        weights_list=tf.trainable_variables()) + \
@@ -481,46 +500,47 @@ class Network(object):
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
-            w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
-            w = [w[i] for i in range(0, len(w), 2)]
+            WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
+            # w = [w[i] for i in range(0, len(WW), 2)]
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
 
-            # set learning rate
-            lr_list = [omegaaa[task_id][i] for i in range(self.output_size)]
-
-            # set train_op
-            train_op_list = [tf.train.AdamOptimizer(lr_list[i]).
-                                 minimize(loss, global_step=global_step,
-                                          var_list=train_theta.append(w[i])) for i in range(self.output_size)]
-            train_op_omega = tf.train.AdamOptimizer(1e-4).minimize(loss, global_step=global_step, var_list=omega)
+            opt = tf.train.AdamOptimizer(learning_rate)
+            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta+WW)
+            capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
+                          for grad, var in gradient_var_all]
+            train_op = opt.apply_gradients(capped_gvs)
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
+                                                                          var_list=train_theta+WW)
+            train_op_omega = tf.assign(omega, self.update_omega(W))
 
         saver = tf.train.Saver()
         cross_val_loss_transfer = 0
-        train_theta_and_W_first = 15
+        train_theta_and_W_first = 10
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
-                    y_b[:, 0: 10] = self.fixprob(y_b[:, 0: 10])
+                    y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
-                            [cross_val_loss, y_list, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
-                        for tid in range(self.output_size):
-                            train_op_, loss_ = sess.run([train_op_list[tid], loss],
-                                                        feed_dict={x: x_b, y: y_b,
-                                                                   th: cross_val_loss_transfer, task_id: tid})
-                    elif np.random.rand() < 0.5:
-                        train_op_, loss_ = sess.run([train_op_omega, loss],
+                            [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        train_op_, loss_ = sess.run([train_op_all, loss],
                                                     feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
+
+                    elif np.random.rand() < 0.5:
+                        train_op_ = sess.run(train_op_omega)
+                        sess.run(upgrade_global_step)
                     else:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
                             [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
-                        train_op_, loss_ = sess.run([train_op_list[tid], loss],
-                                                    feed_dict={x: x_b, y: y_b,
-                                                               th: cross_val_loss_transfer, task_id: tid})
+                        for taskid in range(self.output_size):
+                            train_op_, loss_ = sess.run([train_op, loss],
+                                                        feed_dict={x: x_b, y: y_b,
+                                                                   th: cross_val_loss_transfer, task_id: taskid})
+                        sess.run(upgrade_global_step)
 
                     if step % op_freq == 0:
                         if val:

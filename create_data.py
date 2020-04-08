@@ -13,9 +13,9 @@ if __name__ == '__main__':
     * style
     * score_and_style
     """
-    dataset.split_data(data_type='score_dis_style',
-                       filedir="AVA_dataset/style_image_lists/",
-                       save_dir='AVA_data_score_dis_style/',
-                       train_prob=0.99,
-                       test_prob=0.05,
-                       val_prob=0.01)
+    dataset.split_data(data_type='score_dis',
+                       filedir="AVA_dataset/AVA.txt",
+                       save_dir='AVA_data_score_dis/',
+                       train_prob=0.002,
+                       test_prob=0.0004,
+                       val_prob=0.0004)
