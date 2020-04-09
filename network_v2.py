@@ -595,7 +595,7 @@ class Network(object):
                    tf.contrib.layers.apply_regularization(
                        regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                        weights_list=tf.trainable_variables()) + \
-                   theta * tr_W_omega_WT
+                   theta * tr_W_omega_WT + beta * self.style_loss(y_mv, y[:, 10:])
             # loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th) + \
             #        gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) + \
             #        tf.contrib.layers.apply_regularization(
