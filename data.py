@@ -593,19 +593,6 @@ class AVAImages:
 
             self.save_data(save_dir=save_dir)
 
-    def dis2mean(self, score_distribution):
-        mean = score_distribution[:, 0] * 1 \
-                + score_distribution[:, 1] * 2 \
-                + score_distribution[:, 2] * 3 \
-                + score_distribution[:, 3] * 4 \
-                + score_distribution[:, 4] * 5 \
-                + score_distribution[:, 5] * 6 \
-                + score_distribution[:, 6] * 7 \
-                + score_distribution[:, 7] * 8 \
-                + score_distribution[:, 8] * 9 \
-                + score_distribution[:, 9] * 10
-        return mean / np.sum(score_distribution, axis=1)
-
     def cal_mean(self, score_distribution: list):
         """以均分作为图像的分数"""
         total = score_distribution[0] * 1 \
