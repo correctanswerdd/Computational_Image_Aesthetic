@@ -363,16 +363,17 @@ class Network(object):
     #     tb = tb.stack()
     #     return tb
 
-    def dis_reg(self, y_outputs):
-        y_outputs_sum = tf.reduce_sum(y_outputs, axis=1)
-        return y_outputs / y_outputs_sum
+    def dis_reg(self, y_outputs, fix_marg):
+        y_outputs_sum = tf.reduce_sum(y_outputs, axis=1, keep_dims=True)
+        multi = tf.tile(y_outputs_sum, multiples=[1, fix_marg])
+        return y_outputs / multi
 
-    def distribution_loss(self, y_outputs, y, th):
+    def distribution_loss(self, y_outputs, y, th, fix_marg):
         # ym = tf.multiply(0.5, tf.add(y_outputs, y))
         # jsd = tf.reduce_mean(tf.add(tf.multiply(0.5, self.KLD(y_outputs, ym)), tf.multiply(0.5, self.KLD(y, ym))))
         # jsd = tf.reduce_mean(tf.add(tf.multiply(0.5, tf.keras.losses.kullback_leibler_divergence(y_outputs, ym)),
         #                             tf.multiply(0.5, tf.keras.losses.kullback_leibler_divergence(y, ym))))
-        y_outputs = self.dis_reg(y_outputs)
+        y_outputs = self.dis_reg(y_outputs, fix_marg)
         jsd = self.JSD(y_outputs, y)
         return tf.multiply(self.r_kurtosis(y_outputs, th), jsd)
 
@@ -489,7 +490,7 @@ class Network(object):
             W = self.get_W()
             omega = self.ini_omega(self.output_size)
             tr_W_omega_WT = self.tr(W, omega)
-            loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th) + \
+            loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th, fix_marg) + \
                    gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) + \
                    tf.contrib.layers.apply_regularization(
                        regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
