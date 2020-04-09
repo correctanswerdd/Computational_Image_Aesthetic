@@ -4,8 +4,8 @@ import os
 
 
 def main(_):
-    net = Network(input_size=(224, 224, 3),
-                  output_size=16,
+    net = Network(input_size=(227, 227, 3),
+                  output_size=24,
                   net="ultimate")
     net.eval_binary_acc()
 
