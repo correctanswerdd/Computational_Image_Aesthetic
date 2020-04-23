@@ -530,6 +530,7 @@ class Network(object):
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
+                    sess.run(upgrade_global_step)
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
@@ -539,7 +540,6 @@ class Network(object):
 
                     elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
-                        sess.run(upgrade_global_step)
                     else:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
                             [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
@@ -547,7 +547,6 @@ class Network(object):
                             train_op_, loss_ = sess.run([train_op, loss],
                                                         feed_dict={x: x_b, y: y_b,
                                                                    th: cross_val_loss_transfer, task_id: taskid})
-                        sess.run(upgrade_global_step)
 
                     if step % op_freq == 0:
                         if val:
@@ -630,6 +629,7 @@ class Network(object):
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
+                    sess.run(upgrade_global_step)
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
@@ -639,7 +639,6 @@ class Network(object):
 
                     elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
-                        sess.run(upgrade_global_step)
                     else:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
                             [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
@@ -647,7 +646,7 @@ class Network(object):
                             train_op_, loss_ = sess.run([train_op, loss],
                                                         feed_dict={x: x_b, y: y_b,
                                                                    th: cross_val_loss_transfer, task_id: taskid})
-                        sess.run(upgrade_global_step)
+                        
 
                     if step % op_freq == 0:
                         if val:
