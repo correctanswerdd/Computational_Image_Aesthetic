@@ -517,8 +517,7 @@ class Network(object):
             capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
                           for grad, var in gradient_var_all]
             train_op = opt.apply_gradients(capped_gvs)
-            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
-                                                                          var_list=train_theta+WW)
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, var_list=train_theta+WW)
             train_op_omega = tf.assign(omega, self.update_omega(W))
 
         saver = tf.train.Saver()
@@ -619,8 +618,7 @@ class Network(object):
             capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
                           for grad, var in gradient_var_all]
             train_op = opt.apply_gradients(capped_gvs)
-            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
-                                                                          var_list=train_theta+WW)
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, var_list=train_theta+WW)
             train_op_omega = tf.assign(omega, self.update_omega(W))
 
         saver = tf.train.Saver()
