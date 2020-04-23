@@ -482,8 +482,9 @@ class Network(object):
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
         y_mv = self.score2style(y_outputs[:, 0: 10])
-        global_step = tf.Variable(0, trainable=False)
-        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
+        global_step_saver = tf.Variable(0, trainable=False)
+        # global_step = tf.Variable(0, trainable=False)
+        # upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
             cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
@@ -523,6 +524,7 @@ class Network(object):
         saver = tf.train.Saver()
         cross_val_loss_transfer = 0
         train_theta_and_W_first = 10
+        global_step = 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             for i in range(epoch):
@@ -530,8 +532,9 @@ class Network(object):
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
-                    sess.run(upgrade_global_step)
-                    step = sess.run(global_step)
+                    # sess.run(upgrade_global_step)
+                    # step = sess.run(global_step)
+                    step = global_step
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
                             [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
@@ -557,6 +560,8 @@ class Network(object):
                         saver.save(sess, model_save_path + 'my_model', global_step=global_step)
                     if end == 1:
                         break
+                    global_step += 1
+                    sess.run(tf.assign(global_step_saver, global_step))
             writer = tf.summary.FileWriter("logs/", tf.get_default_graph())
             writer.close()
 
@@ -582,8 +587,9 @@ class Network(object):
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
         y_mv = self.score2style(y_outputs[:, 0: 10])
-        global_step = tf.Variable(0, trainable=False)
-        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
+        global_step_saver = tf.Variable(0, trainable=False)
+        # global_step = tf.Variable(0, trainable=False)
+        # upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
             cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
@@ -624,13 +630,15 @@ class Network(object):
             ckpt = tf.train.get_checkpoint_state(model_read_path)
             if ckpt and ckpt.model_checkpoint_path:
                 re_saver.restore(sess, ckpt.model_checkpoint_path)
+            global_step = sess.run(global_step_saver)
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
-                    sess.run(upgrade_global_step)
-                    step = sess.run(global_step)
+                    # sess.run(upgrade_global_step)
+                    # step = sess.run(global_step)
+                    step = global_step
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer, y_outputs_, tr = sess.run(
                             [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
@@ -647,7 +655,6 @@ class Network(object):
                                                         feed_dict={x: x_b, y: y_b,
                                                                    th: cross_val_loss_transfer, task_id: taskid})
                         
-
                     if step % op_freq == 0:
                         if val:
                             print("training step {0}, loss {1}, validation acc {2}"
@@ -655,6 +662,9 @@ class Network(object):
                         else:
                             print("training step {0}, loss {1}".format(step, loss_))
                         saver.save(sess, model_save_path + 'my_model', global_step=global_step)
+
+                    global_step += 1
+                    sess.run(tf.assign(global_step_saver, global_step))
                     if end == 1:
                         break
             writer = tf.summary.FileWriter("logs/", tf.get_default_graph())
