@@ -586,11 +586,14 @@ class Network(object):
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
 <<<<<<< HEAD
+<<<<<<< HEAD
         y_mv = self.score2style(y_outputs[:, 0: 10])
         global_step_saver = tf.Variable(0, trainable=False)
         # global_step = tf.Variable(0, trainable=False)
         # upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 =======
+=======
+>>>>>>> parent of 359d400... Update network_v2.py
         # y_mv = self.score2style(y_outputs[:, 0: 10])
         global_step = tf.Variable(0, trainable=False)
         upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
@@ -632,10 +635,14 @@ class Network(object):
         train_theta_and_W_first = 10
         with tf.Session() as sess:
 <<<<<<< HEAD
+<<<<<<< HEAD
             ckpt = tf.train.get_checkpoint_state(model_read_path)
             if ckpt and ckpt.model_checkpoint_path:
                 re_saver.restore(sess, ckpt.model_checkpoint_path)
             global_step = sess.run(global_step_saver)
+=======
+            re_saver.restore(sess, model_read_path + "my_model-7241")
+>>>>>>> parent of 359d400... Update network_v2.py
 =======
             re_saver.restore(sess, model_read_path + "my_model-7241")
 >>>>>>> parent of 359d400... Update network_v2.py
