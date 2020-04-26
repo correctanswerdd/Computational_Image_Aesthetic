@@ -551,8 +551,14 @@ class Network(object):
 
                     if step % op_freq == 0:
                         if val:
-                            print("training step {0}, loss {1}, validation acc {2}"
-                                  .format(step, loss_, validation_acc(sess, y_outputs, ph, dataset)))
+                            y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.val_set_x})
+                            y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                            y_pred = np.int64(y_outputs_ >= 5)
+                            y_val = dataset.dis2mean(dataset.val_set_y[:, 0: 10])
+                            y_val = np.int64(y_val >= 5)  # 前提test_set_y.shape=(num,)
+                            val_acc = sum((y_pred-y_val)==0) / dataset.val_set_x.shape[0]
+                            print("training step {0}/batch {4}/epoch {3} loss {1}, validation acc {2}"
+                                  .format(step, loss_, val_acc, i, dataset.batch_index))
                         else:
                             print("training step {0}, loss {1}".format(step, loss_))
                         saver.save(sess, model_save_path + 'my_model')
