@@ -460,7 +460,7 @@ class Network(object):
                 grad = tf.multiply(grad, omega[taskid][s])
         return grad
 
-    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', op_freq=10, val=True, task_marg=10, fix_marg=10):
+    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', save_freq=10, val=True, task_marg=10, fix_marg=10):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
@@ -468,6 +468,12 @@ class Network(object):
         dataset = AVAImages()
         if val:
             dataset.read_data(read_dir=data, flag="val")
+            dataset.val_set_y[:, 0: fix_marg] = self.fixprob(dataset.val_set_y[:, 0: fix_marg])
+            # y_val = dataset.dis2mean(dataset.val_set_y[:, 0: 10])
+            # y_val = np.int64(y_val >= 5)  # 前提test_set_y.shape=(num,)
+        dataset.read_data(read_dir=data, flag="test")
+        y_test = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
+        y_test = np.int64(y_test >= 5)  # 前提test_set_y.shape=(num,)
         dataset.read_data(read_dir=data, flag="Th")
         dataset.Th_y[:, 0: fix_marg] = self.fixprob(dataset.Th_y[:, 0: fix_marg])
         dataset.read_batch_cfg()
@@ -489,7 +495,8 @@ class Network(object):
             cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
             W = self.get_W()
             omega = self.ini_omega(self.output_size)
-            tr_W_omega_WT = self.tr(W, omega)
+            omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
+            tr_W_omega_WT = self.tr(W, omegaaa)
             loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th, fix_marg) + \
                    gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) + \
                    tf.contrib.layers.apply_regularization(
@@ -509,7 +516,7 @@ class Network(object):
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
             WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
             # w = [w[i] for i in range(0, len(WW), 2)]
-            omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
+            # omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
 
             opt = tf.train.AdamOptimizer(learning_rate)
             gradient_var_all = opt.compute_gradients(loss, var_list=train_theta+WW)
@@ -518,11 +525,13 @@ class Network(object):
             train_op = opt.apply_gradients(capped_gvs)
             train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
                                                                           var_list=train_theta+WW)
-            train_op_omega = tf.assign(omega, self.update_omega(W))
+            train_op_omega = tf.assign(omegaaa, self.update_omega(W))
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
         cross_val_loss_transfer = 0
         train_theta_and_W_first = 10
+        best_val_loss = 1000
+        improvement_threshold = 0.999
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             for i in range(epoch):
@@ -532,35 +541,43 @@ class Network(object):
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
-                        cross_val_loss_transfer, y_outputs_, tr = sess.run(
-                            [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
                         train_op_, loss_ = sess.run([train_op_all, loss],
                                                     feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
-
                     elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
                         sess.run(upgrade_global_step)
                     else:
-                        cross_val_loss_transfer, y_outputs_, tr = sess.run(
-                            [cross_val_loss, y_outputs, tr_W_omega_WT], feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
                         for taskid in range(self.output_size):
                             train_op_, loss_ = sess.run([train_op, loss],
                                                         feed_dict={x: x_b, y: y_b,
                                                                    th: cross_val_loss_transfer, task_id: taskid})
                         sess.run(upgrade_global_step)
 
-                    if step % op_freq == 0:
-                        if val:
-                            y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.val_set_x})
+                    if val:
+                        # y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.val_set_x})
+                        # y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                        # y_pred = np.int64(y_outputs_ >= 5)
+                        # val_acc = sum((y_pred-y_val)==0) / dataset.val_set_x.shape[0]
+                        val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
+                                                             th: cross_val_loss_transfer})
+                        print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                              format(dataset.batch_index_max, loss_, val_loss, i+1, dataset.batch_index))
+                        
+                        if val_loss < best_val_loss * improvement_threshold:
+                            best_val_loss = val_loss
+                            ### test acc
+                            y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
                             y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
                             y_pred = np.int64(y_outputs_ >= 5)
-                            y_val = dataset.dis2mean(dataset.val_set_y[:, 0: 10])
-                            y_val = np.int64(y_val >= 5)  # 前提test_set_y.shape=(num,)
-                            val_acc = sum((y_pred-y_val)==0) / dataset.val_set_x.shape[0]
-                            print("training step {0}/batch {4}/epoch {3} loss {1}, validation acc {2}"
-                                  .format(step, loss_, val_acc, i, dataset.batch_index))
-                        else:
-                            print("training step {0}, loss {1}".format(step, loss_))
+                            test_acc = sum((y_pred-y_test) == 0) / dataset.test_set_x.shape[0]
+                            print("     test acc {0}.".format(test_acc))
+                    else:
+                        print("training step {0}, loss {1}".format(step, loss_))
+                
+                    if step % save_freq == 0:
+                        ### save
                         saver.save(sess, model_save_path + 'my_model')
                     if end == 1:
                         break
