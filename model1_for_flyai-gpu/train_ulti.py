@@ -6,7 +6,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def main(_):
-    # download("AVA_score_dis_style.zip", decompression=True)
+    # download("AVA_data_score_dis_style.zip", decompression=True)
     # download("./model_MTCNN/checkpoint", decompression=False)
     # download("./model_MTCNN/my_model.data-00000-of-00001", decompression=False)
     # download("./model_MTCNN/my_model.index", decompression=False)
