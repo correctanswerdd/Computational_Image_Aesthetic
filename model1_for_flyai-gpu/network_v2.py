@@ -124,10 +124,11 @@ class Network(object):
             # result = tf.while_loop(condition_wa_ws, body_wa_ws, loop_vars=[time, l6, l7])
             # last_time, _, last_out = result
             # final_out_l7 = last_out.stack()
-            l7_list = [slim.fully_connected(l6, 1, activation_fn=tf.nn.sigmoid) for i in range(self.output_size)]
+            # l7_list = [slim.fully_connected(l6, 1, activation_fn=tf.nn.sigmoid) for i in range(self.output_size)]
+            l7_list = [slim.fully_connected(l6, 1) for i in range(self.output_size)]
         return l7_list
 
-    def eval_binary_acc(self, model_path='./model_MTCNN/'):
+    def eval_binary_acc(self, model_path='./model_MTCNN 2/'):
         dataset = AVAImages()
         dataset.read_data('AVA_data_score_dis_style/', flag="test")
         y_test_mean = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
@@ -150,6 +151,31 @@ class Network(object):
                 correct_prediction = tf.equal(y_pred, y_test)
                 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
                 print("test accuracy - %g" % sess.run(accuracy))
+            else:
+                print('No checkpoing file found')
+                return
+
+    def cal_distribution(self, model_path='./model_MTCNN/', image_path='1.jpg'):
+        img = cv2.imread(image_path)
+        img = cv2.resize(img * 255, (227, 227), interpolation=cv2.INTER_CUBIC)
+        img = img[np.newaxis, :]
+        w, h, c = self.input_size
+        x = tf.placeholder(tf.float32, [None, w, h, c])
+        y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+
+        dataset = AVAImages()
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+                global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+                y_outputs = sess.run(y_outputs, feed_dict={x: img})
+                y_outputs_to_one = y_outputs[:, 0: 10] / np.sum(y_outputs[:, 0: 10])
+                y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
+                # y_pred = np.int64(y_outputs_mean >= 5)[:, np.newaxis]
+                print("score - %g" % y_outputs_mean)
             else:
                 print('No checkpoing file found')
                 return
@@ -377,7 +403,7 @@ class Network(object):
         #                             tf.multiply(0.5, tf.keras.losses.kullback_leibler_divergence(y, ym))))
         y_outputs = self.dis_reg(y_outputs, fix_marg)
         jsd = self.JSD(y_outputs, y)
-        return tf.multiply(self.r_kurtosis(y_outputs, th), jsd)
+        return self.r_kurtosis(y_outputs, th), jsd
 
     def cross_distribution_loss(self, y_outputs, y):
         # ym = tf.multiply(0.5, tf.add(y_outputs, y))
@@ -387,10 +413,7 @@ class Network(object):
         return tf.reduce_mean(entropy)
 
     def style_loss(self, y_outputs, y):
-        # entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_outputs, labels=y)
-        # return tf.reduce_mean(entropy)
-        entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=y_outputs, labels=tf.argmax(y, 1))
+        entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_outputs, labels=y)
         return tf.reduce_mean(entropy)
 
     def sum_theta_and_W(self):
@@ -482,7 +505,7 @@ class Network(object):
                 grad = tf.multiply(grad, omega[taskid][s])
         return grad
 
-    def train_MTCNN(self, data='AVA_data_score_dis_style/', model_save_path='./model_MTCNN/', val=True, task_marg=10, fix_marg=10):
+    def train_MTCNN(self, data='dataset/', model_save_path='./model_MTCNN/', val=True, task_marg=10, fix_marg=10):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
@@ -508,7 +531,9 @@ class Network(object):
             task_id = tf.placeholder(tf.int32)
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
-        y_mv = self.score2style(y_outputs[:, 0: 10])
+        y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
+                                                                      keep_dims=True)
+        y_mv = self.score2style(y_outputs_to_one)
         global_step = tf.Variable(0, trainable=False)
         upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
@@ -518,12 +543,15 @@ class Network(object):
             omega = self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
-            loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th, fix_marg) + \
-                   gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) + \
-                   tf.contrib.layers.apply_regularization(
-                       regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
-                       weights_list=tf.trainable_variables()) + \
-                   theta * tr_W_omega_WT + beta * self.style_loss(y_mv, y[:, 10:])
+            y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+            r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
+            loss = r_kus * (dis_loss +
+                            gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) +
+                            tf.contrib.layers.apply_regularization(
+                               regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
+                               weights_list=tf.trainable_variables()) +
+                            theta * tr_W_omega_WT + beta * self.style_loss(y_mv, y[:, 10:])
+                            )
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
@@ -584,7 +612,10 @@ class Network(object):
                                 improvement_threshold += 0.001
                             best_val_loss = val_loss
                             ### test acc
-                            y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
+                            y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
+                                                                                          keep_dims=True)
+                            y_outputs_ = sess.run(y_outputs_to_one, feed_dict={x: dataset.test_set_x})
+
                             y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
                             y_pred = np.int64(y_outputs_ >= 5)
                             test_acc = sum((y_pred-y_test) == 0) / dataset.test_set_x.shape[0]
@@ -604,19 +635,21 @@ class Network(object):
                             cor_dis = np.sum(np.square(cor_matrix1-cor_matrix2))
                             print("    distance {0}, add distance {1}.".format(cor_dis, cor_dis - last_cor_dis))
                             last_cor_dis = cor_dis
-                            cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
-                            cv2.imwrite(model_save_path + "cor_matrix2.png", cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
-
-                            ### save
-                            saver.save(sess, model_save_path + 'my_model')
-                            os.system('zip -r myfile.zip ./' + model_save_path)
-                            # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
-                            upload_data("myfile.zip", overwrite=True)
                     else:
                         print("training step {0}, loss {1}".format(step, loss_))
 
                     if end == 1:
                         break
+
+                # ### save
+                # cv2.imwrite(model_save_path + "cor_matrix1.png",
+                #             cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+                # cv2.imwrite(model_save_path + "cor_matrix2.png",
+                #             cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+                # saver.save(sess, model_save_path + 'my_model')
+                # os.system('zip -r myfile.zip ./' + model_save_path)
+                # # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+                # upload_data("myfile.zip", overwrite=True)
             writer = tf.summary.FileWriter("logs/", tf.get_default_graph())
             writer.close()
 
@@ -692,6 +725,7 @@ class Network(object):
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
                     step = sess.run(global_step)
+
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
                         train_op_, loss_ = sess.run([train_op_all, loss],
@@ -707,44 +741,44 @@ class Network(object):
                                                                    th: cross_val_loss_transfer, task_id: taskid})
                         sess.run(upgrade_global_step)
 
-                    if val:
-                        val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
-                                                             th: cross_val_loss_transfer})
-                        print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
-                              format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+                        if val:
+                            val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
+                                                                 th: cross_val_loss_transfer})
+                            print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                                  format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
-                        if val_loss < best_val_loss * improvement_threshold:
-                            if improvement_threshold < 1:
-                                improvement_threshold += 0.001
-                            best_val_loss = val_loss
-                            ### test acc
-                            y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
-                            y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
-                            y_pred = np.int64(y_outputs_ >= 5)
-                            test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
-                            print("    test acc {0}.".format(test_acc))
+                            if val_loss < best_val_loss * improvement_threshold:
+                                if improvement_threshold < 1:
+                                    improvement_threshold *= 1.001
+                                best_val_loss = val_loss
+                                ### test acc
+                                y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
+                                y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                                y_pred = np.int64(y_outputs_ >= 5)
+                                test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
+                                print("    test acc {0}.".format(test_acc))
 
-                            ### correlation matrix
-                            Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
-                            W = np.zeros(shape=(self.output_size, 4096))
-                            for ii in range(W.shape[0]):
-                                W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
-                            cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
-                            cor_matrix1 = self.min_max_normalization(cor_matrix1)
-                            cor_matrix2 = sess.run(tf.transpose(
-                                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
-                            )
-                            cor_matrix2 = self.min_max_normalization(cor_matrix2)
-                            cor_dis = np.sum(np.square(cor_matrix1 - cor_matrix2))
-                            print("    distance {0}, add distance {1}.".format(cor_dis, cor_dis - last_cor_dis))
-                            last_cor_dis = cor_dis
+                                ### correlation matrix
+                                Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
+                                W = np.zeros(shape=(self.output_size, 4096))
+                                for ii in range(W.shape[0]):
+                                    W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
+                                cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
+                                cor_matrix1 = self.min_max_normalization(cor_matrix1)
+                                cor_matrix2 = sess.run(tf.transpose(
+                                    tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
+                                )
+                                cor_matrix2 = self.min_max_normalization(cor_matrix2)
+                                cor_dis = np.sum(np.square(cor_matrix1 - cor_matrix2))
+                                print("    distance {0}, add distance {1}.".format(cor_dis, cor_dis - last_cor_dis))
+                                last_cor_dis = cor_dis
 
-                    else:
-                        print("training step {0}, loss {1}".format(step, loss_))
+                        else:
+                            print("training step {0}, loss {1}".format(step, loss_))
 
                     if end == 1:
                         break
-                
+
                 ### save
                 cv2.imwrite(model_save_path + "cor_matrix1.png",
                             cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
