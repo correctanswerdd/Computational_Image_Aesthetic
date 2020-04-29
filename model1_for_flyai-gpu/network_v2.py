@@ -531,19 +531,19 @@ class Network(object):
             task_id = tf.placeholder(tf.int32)
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
-        y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
                                                                       keep_dims=True)
+        y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
         y_mv = self.score2style(y_outputs_to_one)
         global_step = tf.Variable(0, trainable=False)
         upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
-            cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
+            cross_val_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
             W = self.get_W()
             omega = self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
-            y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
             r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
             loss = r_kus * (dis_loss +
                             gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) +
@@ -612,9 +612,9 @@ class Network(object):
                                 improvement_threshold += 0.001
                             best_val_loss = val_loss
                             ### test acc
-                            y_outputs_to_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
-                                                                                          keep_dims=True)
-                            y_outputs_ = sess.run(y_outputs_to_one, feed_dict={x: dataset.test_set_x})
+                            y_outputs_to_zero_one = y_outputs[:, 0: task_marg] / \
+                                                    tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+                            y_outputs_ = sess.run(y_outputs_to_zero_one, feed_dict={x: dataset.test_set_x})
 
                             y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
                             y_pred = np.int64(y_outputs_ >= 5)
