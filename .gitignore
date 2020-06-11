@@ -1,3 +1,11 @@
+# cache
 .idea/
-AVA_dataset/images/**
 *.pyc
+
+# images
+Skill-MTCNN/AVA_dataset/images/**
+Skill-MTCNN/select/**
+
+# model
+Skill-MTCNN/model_MTCNN/**
+
