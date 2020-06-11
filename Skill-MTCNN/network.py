@@ -6,6 +6,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from operator import itemgetter
+import pickle
 slim = tf.contrib.slim
 
 
@@ -213,50 +214,107 @@ class Network(object):
         dis = np.array([index2score_dis[int(i[0:-1])] for i in urls])
         dataset = AVAImages()
         score = dataset.dis2mean(dis)
-        i = 0
-        low = 0
-        for i in range(score.shape[0]):
-            if score[i] > 5:
-                low += 1
-        print(low)
-        #
-        # w, h, c = self.input_size
-        # x = tf.placeholder(tf.float32, [None, w, h, c])
-        # y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
-        # y_outputs = tf.concat(y_list, axis=1)
-        #
-        # saver = tf.train.Saver()
-        # with tf.Session() as sess:
-        #     ckpt = tf.train.get_checkpoint_state(model_path)
-        #     if ckpt and ckpt.model_checkpoint_path:
-        #         saver.restore(sess, ckpt.model_checkpoint_path)
-        #         global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
-        #         i = 0
-        #         for url, img_skill in zip(urls, img_skills):
-        #             img = cv2.imread("AVA_dataset/images/{index}.jpg".format(index=url[0:-1]))
-        #             img = cv2.resize(img, (227, 227), interpolation=cv2.INTER_CUBIC)
-        #             img = img[np.newaxis, :] / 225.
-        #             y_predict = sess.run(y_outputs, feed_dict={x: img})
-        #             y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
-        #             y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
-        #             if y_outputs_mean[0] > 5 and score[i] <= 5:
-        #                 seg_img_skill = img_skill[0:-1].split(" ")
-        #                 ski_index = np.nonzero(np.array(list(map(int, seg_img_skill))))[0]
-        #                 count_skills[ski_index] += 1
-        #                 keys = list(ski_index)
-        #                 if len(keys) == 0:
-        #                     count_skills[14] += 1
-        #                     print("index={index}, score={score}, skill={skill}".format(
-        #                         index=urls[i][:-1], score=y_outputs_mean, skill="no skill"))
-        #                 else:
-        #                     print("index={index}, score={score}, skill={skill}".format(
-        #                         index=urls[i][:-1], score=y_outputs_mean, skill=itemgetter(*keys)(skills)))
-        #                 # os.system("cp AVA_dataset/images/{index}.jpg select".format(index=url[0:-1]))
-        #             i += 1
-        #         print(count_skills)
-        #     else:
-        #         print('No checkpoing file found')
-        #         return
+
+        w, h, c = self.input_size
+        x = tf.placeholder(tf.float32, [None, w, h, c])
+        y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+                global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+                i = 0
+                for url, img_skill in zip(urls, img_skills):
+                    img = cv2.imread("AVA_dataset/images/{index}.jpg".format(index=url[0:-1]))
+                    img = cv2.resize(img, (227, 227), interpolation=cv2.INTER_CUBIC)
+                    img = img[np.newaxis, :] / 225.
+                    y_predict = sess.run(y_outputs, feed_dict={x: img})
+                    y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
+                    y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
+                    if y_outputs_mean[0] > 5 and score[i] <= 5:
+                        seg_img_skill = img_skill[0:-1].split(" ")
+                        ski_index = np.nonzero(np.array(list(map(int, seg_img_skill))))[0]
+                        count_skills[ski_index] += 1
+                        keys = list(ski_index)
+                        if len(keys) == 0:
+                            count_skills[14] += 1
+                            print("index={index}, score={score}, skill={skill}".format(
+                                index=urls[i][:-1], score=y_outputs_mean, skill="no skill"))
+                        else:
+                            print("index={index}, score={score}, skill={skill}".format(
+                                index=urls[i][:-1], score=y_outputs_mean, skill=itemgetter(*keys)(skills)))
+                        # os.system("cp AVA_dataset/images/{index}.jpg select".format(index=url[0:-1]))
+                    i += 1
+                print(count_skills)
+            else:
+                print('No checkpoing file found')
+                return
+
+    def propagate_ROC(self, output, threshold):
+        Y_predict = np.zeros(output.shape)
+        for i in range(output.shape[0]):
+            if output[i] >= threshold:
+                Y_predict[i] = 1
+            else:
+                Y_predict[i] = 0
+        return Y_predict
+
+    def draw_and_save_ROC(self, model_path='./model_MTCNN'):
+        dataset = AVAImages()
+        dataset.read_data(flag="test")
+
+        # load weights
+        w, h, c = self.input_size
+        x = tf.placeholder(tf.float32, [None, w, h, c])
+        y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+                y_predict = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
+                y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
+                y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
+            else:
+                print('No checkpoing file found')
+                return
+
+        Y = np.int64(dataset.dis2mean(dataset.test_set_y[:, 0:10]) >= 5)
+        threshold = np.sort(y_outputs_mean)
+        recall = np.zeros(y_outputs_mean.shape)
+        FAR = np.zeros(y_outputs_mean.shape)
+
+        for k in range(threshold.shape[0]):
+            Y_predict = self.propagate_ROC(y_outputs_mean, threshold[k])  # (m_test,)
+            TP = 0
+            TN = 0
+            FP = 0
+            FN = 0
+            for i in range(Y.shape[0]):
+                if Y_predict[i] - Y[i] == 0 and Y[i] == 1:
+                    TP = TP + 1
+                elif Y_predict[i] - Y[i] == 0 and Y[i] == 0:
+                    TN = TN + 1
+                elif Y_predict[i] - Y[i] == 1:
+                    FP = FP + 1
+                elif Y_predict[i] - Y[i] == -1:
+                    FN = FN + 1
+                else:
+                    pass
+            recall[k] = TP / (TP + FN)
+            FAR[k] = FP / (FP + TN)
+
+        ######################save ROC
+        dir = './ROCcurve/'
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        cuv = FAR, recall
+        with open(dir + 'roc_curve.pkl', 'wb') as f:
+            pickle.dump(cuv, f)
 
     def read_cfg(self):
         # 创建管理对象
