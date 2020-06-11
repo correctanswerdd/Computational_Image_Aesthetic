@@ -1,3 +1,4 @@
+from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
 import configparser
 import os
@@ -101,7 +102,7 @@ class Network(object):
                 print('No checkpoing file found')
                 return
 
-    def cal_distribution(self, model_path='./model_MTCNN/', image_path='AVA_dataset/images/800749.jpg'):
+    def cal_distribution(self, model_path='./model_MTCNN/', image_path='8.jpeg'):
         img = cv2.imread(image_path)
         img = cv2.resize(img * 255, (227, 227), interpolation=cv2.INTER_CUBIC)
         img = img[np.newaxis, :]
@@ -180,6 +181,11 @@ class Network(object):
                 return
 
     def view_result(self, model_path='./model_MTCNN/'):
+        """
+        看看skill-mtcnn预测为正/负样本的图都长啥样
+        :param model_path:
+        :return:
+        """
         skills = {0: 'Complementary_Colors',
                   1: 'Duotones',
                   2: 'HDR',
@@ -253,6 +259,37 @@ class Network(object):
                 print('No checkpoing file found')
                 return
 
+    def select_img_of_skill_for_ROC(self, skill_index=10):
+        """
+        从test set中，选出使用某特定摄影技巧的所有图片
+        :return:
+        """
+        dataset = AVAImages()
+        dataset.read_data(flag="test")
+        x = []
+        y = []
+        count = 0
+        for i in range(dataset.test_set_y.shape[0]):
+            if dataset.test_set_y[i][10 + skill_index] == 1:
+                count += 1
+                x.append(dataset.test_set_x[i])
+                y.append(dataset.test_set_y[i])
+
+        print(count)
+        x = np.array(x, dtype=float)
+        y = np.array(y, dtype=float)
+        # with open('x.pkl', 'wb') as f:
+        #     pickle.dump(x, f)
+        # with open('y.pkl', 'wb') as f:
+        #     pickle.dump(y, f)
+
+    def load_img_of_skill_for_ROC(self):
+        with open('x.pkl', 'rb') as f:
+            x = pickle.load(f)
+        with open('y.pkl', 'rb') as f:
+            y = pickle.load(f)
+        return x, y
+
     def propagate_ROC(self, output, threshold):
         Y_predict = np.zeros(output.shape)
         for i in range(output.shape[0]):
@@ -263,8 +300,12 @@ class Network(object):
         return Y_predict
 
     def draw_and_save_ROC(self, model_path='./model_MTCNN'):
+        # load data
         dataset = AVAImages()
-        dataset.read_data(flag="test")
+        # dataset.read_data(flag="test")
+        # X, Y = dataset.test_set_x, np.int64(dataset.dis2mean(dataset.test_set_y[:, 0:10]) >= 5)
+        x, y = self.load_img_of_skill_for_ROC()
+        X, Y = x, np.int64(dataset.dis2mean(y[:, 0:10]) >= 5)
 
         # load weights
         w, h, c = self.input_size
@@ -276,14 +317,13 @@ class Network(object):
             ckpt = tf.train.get_checkpoint_state(model_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
-                y_predict = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
+                y_predict = sess.run(y_outputs, feed_dict={x: X})
                 y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
                 y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
             else:
                 print('No checkpoing file found')
                 return
 
-        Y = np.int64(dataset.dis2mean(dataset.test_set_y[:, 0:10]) >= 5)
         threshold = np.sort(y_outputs_mean)
         recall = np.zeros(y_outputs_mean.shape)
         FAR = np.zeros(y_outputs_mean.shape)
@@ -746,3 +786,108 @@ class Network(object):
                 os.system('zip -r myfile.zip ./' + model_save_path)
                 # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
                 # upload_data("myfile.zip", overwrite=True)
+
+    def train_score_CNN(self, data='dataset/', model_save_path='./model_score_CNN/', val=True, task_marg=10, fix_marg=10):
+        """
+        训练单纯的分数分布预测模型
+        :param data:
+        :param model_save_path:
+        :param val:
+        :param task_marg:
+        :param fix_marg:
+        :return:
+        """
+        folder = os.path.exists(model_save_path)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+        dataset = AVAImages()
+        if val:
+            dataset.read_data(read_dir=data, flag="val")
+            dataset.val_set_y[:, 0: fix_marg] = self.fixprob(dataset.val_set_y[:, 0: fix_marg])
+        dataset.read_data(read_dir=data, flag="test")
+        y_test = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
+        y_test = np.int64(y_test >= 5)  # 前提test_set_y.shape=(num,)
+        dataset.read_data(read_dir=data, flag="Th")
+        dataset.Th_y[:, 0: fix_marg] = self.fixprob(dataset.Th_y[:, 0: fix_marg])
+        dataset.read_batch_cfg()
+        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+        w, h, c = self.input_size
+        with tf.name_scope("Inputs"):
+            x = tf.placeholder(tf.float32, [None, w, h, c])
+            y = tf.placeholder(tf.float32, [None, self.output_size])
+            th = tf.placeholder(tf.float32)
+        y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
+                                                                          keep_dims=True)
+        y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
+        global_step = tf.Variable(0, trainable=False)
+        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
+
+        with tf.name_scope("Loss"):
+            cross_val_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
+            r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
+            loss = r_kus * dis_loss
+        with tf.name_scope("Train"):
+            # get variables
+            train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
+            WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
+
+            # lr weight decay
+            learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
+                                                       decay_steps=10, decay_rate=learning_rate_decay, staircase=False)
+
+            # optimize
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
+                                                                          var_list=train_theta + WW)
+
+        saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
+        best_val_loss = 1000
+        improvement_threshold = 0.999
+        best_test_acc = 0.0
+        best_test_acc_epoch = 0
+        best_test_acc_batch = 0
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            for i in range(epoch):
+                while True:
+                    # 遍历所有batch
+                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
+                    step = sess.run(global_step)
+                    cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                    train_op_, loss_ = sess.run([train_op_all, loss],
+                                                feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
+
+                    if val:
+                        val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
+                                                             th: cross_val_loss_transfer})
+                        print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                              format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+
+                        if val_loss < best_val_loss * improvement_threshold:
+                            best_val_loss = val_loss
+                            ### test acc
+                            y_outputs_to_zero_one = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+                            y_outputs_ = sess.run(y_outputs_to_zero_one, feed_dict={x: dataset.test_set_x})
+                            y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                            y_pred = np.int64(y_outputs_ >= 5)
+                            test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
+                            print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
+                                  format(acc=test_acc, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
+                            if test_acc > best_test_acc:
+                                best_test_acc = test_acc
+                                best_test_acc_epoch = i
+                                best_test_acc_batch = dataset.batch_index
+                    else:
+                        print("training step {0}, loss {1}".format(step, loss_))
+
+                    if end == 1:
+                        break
+
+                #### save
+            saver.save(sess, model_save_path + 'my_model')
+            os.system('zip -r myfile.zip ./' + model_save_path)
+            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+            upload_data("myfile.zip", overwrite=True)
