@@ -13,7 +13,7 @@ for fn in os.listdir(src_dir):
             cur = pickle.load(f)
             FAR, recall = cur
             print(recall)
-        plt.plot(FAR.ravel(), 1 - recall.ravel(), linewidth=2, label='ROC of Skill-MTCNN')
+        plt.plot(FAR.ravel(), 1-recall.ravel(), linewidth=2, label='ROC of '+fn[0:-4])
         i = i + 1
 
 # plt.ylim(1e-10, 1)
