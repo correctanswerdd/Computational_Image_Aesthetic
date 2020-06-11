@@ -5,7 +5,14 @@
 # images
 Skill-MTCNN/AVA_dataset/images/**
 Skill-MTCNN/select/**
+Skill-MTCNN/*.jpg
+Skill-MTCNN/*.jpeg
 
 # model
 Skill-MTCNN/model_MTCNN/**
+Skill-MTCNN/model_score_CNN/**
+
+# data
+Skill-MTCNN/test_ROCcurve/**
+Skill-MTCNN/dataset/**
 
