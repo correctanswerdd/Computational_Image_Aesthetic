@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from operator import itemgetter
 slim = tf.contrib.slim
 
 
@@ -176,6 +177,86 @@ class Network(object):
             else:
                 print('No checkpoing file found')
                 return
+
+    def view_result(self, model_path='./model_MTCNN/'):
+        skills = {0: 'Complementary_Colors',
+                  1: 'Duotones',
+                  2: 'HDR',
+                  3: 'Image_Grain',
+                  4: 'Light_On_White',
+                  5: 'Long_Exposure',
+                  6: 'Macro',
+                  7: 'Motion_Blur',
+                  8: 'Negative_Image',
+                  9: 'Rule_of_Thirds',
+                  10: 'Shallow_DOF',
+                  11: 'Silhouettes',
+                  12: 'Soft_Focus',
+                  13: 'Vanishing_Point'}
+        count_skills = np.zeros(15, dtype=int)
+        if not os.path.exists("./select"):
+            os.makedirs("./select")
+
+        with open("AVA_dataset/style_image_lists/test.txt", "r") as f_x:
+            urls = f_x.readlines()
+        with open("AVA_dataset/style_image_lists/test_y.txt", "r") as f_y:
+            img_skills = f_y.readlines()
+
+        with open("AVA_dataset/AVA_check.txt", "r") as f_ava:
+            line_ava = f_ava.readlines()
+        index2score_dis = {}
+        for line in line_ava:
+            seg = line.split(" ")
+            seg = list(map(int, seg))
+            score_dis = np.array(seg[2: 12]) / sum(seg[2: 12])
+            index2score_dis[seg[1]] = score_dis
+        dis = np.array([index2score_dis[int(i[0:-1])] for i in urls])
+        dataset = AVAImages()
+        score = dataset.dis2mean(dis)
+        i = 0
+        low = 0
+        for i in range(score.shape[0]):
+            if score[i] > 5:
+                low += 1
+        print(low)
+        #
+        # w, h, c = self.input_size
+        # x = tf.placeholder(tf.float32, [None, w, h, c])
+        # y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        # y_outputs = tf.concat(y_list, axis=1)
+        #
+        # saver = tf.train.Saver()
+        # with tf.Session() as sess:
+        #     ckpt = tf.train.get_checkpoint_state(model_path)
+        #     if ckpt and ckpt.model_checkpoint_path:
+        #         saver.restore(sess, ckpt.model_checkpoint_path)
+        #         global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+        #         i = 0
+        #         for url, img_skill in zip(urls, img_skills):
+        #             img = cv2.imread("AVA_dataset/images/{index}.jpg".format(index=url[0:-1]))
+        #             img = cv2.resize(img, (227, 227), interpolation=cv2.INTER_CUBIC)
+        #             img = img[np.newaxis, :] / 225.
+        #             y_predict = sess.run(y_outputs, feed_dict={x: img})
+        #             y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
+        #             y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
+        #             if y_outputs_mean[0] > 5 and score[i] <= 5:
+        #                 seg_img_skill = img_skill[0:-1].split(" ")
+        #                 ski_index = np.nonzero(np.array(list(map(int, seg_img_skill))))[0]
+        #                 count_skills[ski_index] += 1
+        #                 keys = list(ski_index)
+        #                 if len(keys) == 0:
+        #                     count_skills[14] += 1
+        #                     print("index={index}, score={score}, skill={skill}".format(
+        #                         index=urls[i][:-1], score=y_outputs_mean, skill="no skill"))
+        #                 else:
+        #                     print("index={index}, score={score}, skill={skill}".format(
+        #                         index=urls[i][:-1], score=y_outputs_mean, skill=itemgetter(*keys)(skills)))
+        #                 # os.system("cp AVA_dataset/images/{index}.jpg select".format(index=url[0:-1]))
+        #             i += 1
+        #         print(count_skills)
+        #     else:
+        #         print('No checkpoing file found')
+        #         return
 
     def read_cfg(self):
         # 创建管理对象
