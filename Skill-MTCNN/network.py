@@ -102,7 +102,7 @@ class Network(object):
                 print('No checkpoing file found')
                 return
 
-    def cal_distribution(self, model_path='./model_MTCNN/', image_path='8.jpeg'):
+    def cal_distribution(self, model_path='./model_MTCNN/', image_path='3.jpg'):
         img = cv2.imread(image_path)
         img = cv2.resize(img * 255, (227, 227), interpolation=cv2.INTER_CUBIC)
         img = img[np.newaxis, :]
@@ -258,6 +258,39 @@ class Network(object):
             else:
                 print('No checkpoing file found')
                 return
+
+    def view_result_v2(self, model_path='./model_MTCNN'):
+        dataset = AVAImages()
+        dataset.read_data(flag="test")
+        X, Y = dataset.test_set_x, dataset.dis2mean(dataset.test_set_y[:, 0:10])
+        Y_sort = np.sort(Y)
+
+        # load weights
+        w, h, c = self.input_size
+        x = tf.placeholder(tf.float32, [None, w, h, c])
+        y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+                y_predict = sess.run(y_outputs, feed_dict={x: X})
+                y_outputs_to_one = y_predict[:, 0: 10] / np.sum(y_predict[:, 0: 10])
+                y_outputs_mean = dataset.dis2mean(y_outputs_to_one)
+            else:
+                print('No checkpoing file found')
+                return
+        y_outputs_sort = np.sort(y_outputs_mean)
+
+        # save
+        dir = './select/'
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        with open(dir + 'y.pkl', 'wb') as f:
+            pickle.dump(Y_sort, f)
+        with open(dir + 'y_outputs.pkl', 'wb') as f:
+            pickle.dump(y_outputs_sort, f)
 
     def select_img_of_skill_for_ROC(self, skill_index=10):
         """
