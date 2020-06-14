@@ -1,5 +1,6 @@
 from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
+from resnet import resnet_v2_50
 import configparser
 import os
 import tensorflow as tf
@@ -50,6 +51,13 @@ class Network(object):
         with tf.variable_scope("Cor_Matrix"):
             output = slim.fully_connected(inputs, 14, scope='fc')
         return output
+
+    def MTCNN_v2(self, inputs, training=True):
+        with tf.variable_scope("Theta"):
+            feature_vec, _ = resnet_v2_50(inputs=inputs, num_classes=4096, is_training=training)
+        with tf.variable_scope("W"):
+            l7_list = [slim.fully_connected(feature_vec, 1) for i in range(self.output_size)]
+        return l7_list
 
     def MTCNN(self, inputs, training=True):
         with tf.variable_scope("Theta"):
@@ -506,7 +514,6 @@ class Network(object):
         with tf.variable_scope('Omega'):
             o = tf.Variable(tf.eye(task_num, dtype=tf.float32) / tf.cast(task_num, tf.float32),
                             dtype=tf.float32, name='omega', trainable=True)
-        return o
 
     def tr(self, W, o):
         result = tf.linalg.trace(tf.matmul(tf.matmul(W, tf.matrix_inverse(o)), tf.transpose(W)))
@@ -564,7 +571,7 @@ class Network(object):
         with tf.name_scope("Loss"):
             cross_val_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
             W = self.get_W()
-            omega = self.ini_omega(self.output_size)
+            self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
             r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
@@ -717,7 +724,7 @@ class Network(object):
         with tf.name_scope("Loss"):
             cross_val_loss = self.JSD(y_outputs[:, 0: task_marg], y[:, 0: task_marg])
             W = self.get_W()
-            omega = self.ini_omega(self.output_size)
+            self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
             loss = self.distribution_loss(y_outputs[:, 0: task_marg], y[:, 0: task_marg], th, fix_marg) + \
@@ -924,3 +931,170 @@ class Network(object):
             os.system('zip -r myfile.zip ./' + model_save_path)
             sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
             upload_data("myfile.zip", overwrite=True)
+
+    def train_MTCNN_v2(self, data='dataset/', model_save_path='./model_MTCNN_v2/', val=True, task_marg=10, fix_marg=10):
+        folder = os.path.exists(model_save_path)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+        # load data
+        dataset = AVAImages()
+        if val:
+            dataset.read_data(read_dir=data, flag="val")
+            dataset.val_set_y[:, 0: fix_marg] = self.fixprob(dataset.val_set_y[:, 0: fix_marg])
+        dataset.read_data(read_dir=data, flag="test")
+        y_test = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
+        y_test = np.int64(y_test >= 5)  # 前提test_set_y.shape=(num,)
+        dataset.read_data(read_dir=data, flag="Th")
+        dataset.Th_y[:, 0: fix_marg] = self.fixprob(dataset.Th_y[:, 0: fix_marg])
+
+        # load parameters
+        dataset.read_batch_cfg()
+        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+
+        # placeholders
+        w, h, c = self.input_size
+        with tf.name_scope("Inputs"):
+            x = tf.placeholder(tf.float32, [None, w, h, c])
+            y = tf.placeholder(tf.float32, [None, self.output_size])
+            th = tf.placeholder(tf.float32)
+            task_id = tf.placeholder(tf.int32)
+        y_list = self.MTCNN_v2(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
+                                                                          keep_dims=True)
+        y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
+
+        # y_mv
+        y_mv = self.score2style(y_outputs_to_one)
+
+        # other parameters
+        global_step = tf.Variable(0, trainable=False)
+        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
+
+        with tf.name_scope("Loss"):
+            cross_val_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
+            W = self.get_W()
+            self.ini_omega(self.output_size)
+            omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
+            tr_W_omega_WT = self.tr(W, omegaaa)
+            r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
+            loss = r_kus * (dis_loss +
+                            gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) +
+                            tf.contrib.layers.apply_regularization(
+                                regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
+                                weights_list=tf.trainable_variables()) +
+                            theta * tr_W_omega_WT +
+                            beta * self.style_loss(y_mv, y[:, 10:])
+                            )
+        with tf.name_scope("Train"):
+            # get variables
+            train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
+            WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
+
+            # lr weight decay
+            learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
+                                                       decay_steps=10, decay_rate=learning_rate_decay, staircase=False)
+
+            # optimize
+            opt = tf.train.AdamOptimizer(learning_rate)
+            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW)
+            capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
+                          for grad, var in gradient_var_all]
+            train_op = opt.apply_gradients(capped_gvs)
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
+                                                                          var_list=train_theta + WW)
+            train_op_omega = tf.assign(omegaaa, self.update_omega(W))
+
+        saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
+        cross_val_loss_transfer = 0
+        train_theta_and_W_first = 20
+        best_val_loss = 1000
+        improvement_threshold = 0.999
+        last_cor_dis = 0.0
+        best_test_acc = 0.0
+        best_test_acc_epoch = 0
+        best_test_acc_batch = 0
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            for i in range(epoch):
+                while True:
+                    # 遍历所有batch
+                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
+                    step = sess.run(global_step)
+                    if step < train_theta_and_W_first:
+                        cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        train_op_, loss_ = sess.run([train_op_all, loss],
+                                                    feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
+                    elif np.random.rand() < 0.5:
+                        train_op_ = sess.run(train_op_omega)
+                        sess.run(upgrade_global_step)
+                    else:
+                        cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        for taskid in range(self.output_size):
+                            train_op_, loss_ = sess.run([train_op, loss],
+                                                        feed_dict={x: x_b, y: y_b,
+                                                                   th: cross_val_loss_transfer, task_id: taskid})
+                        sess.run(upgrade_global_step)
+
+                    if val:
+                        # y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.val_set_x})
+                        # y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                        # y_pred = np.int64(y_outputs_ >= 5)
+                        # val_acc = sum((y_pred-y_val)==0) / dataset.val_set_x.shape[0]
+                        val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
+                                                             th: cross_val_loss_transfer})
+                        print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                              format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+
+                        if val_loss < best_val_loss * improvement_threshold:
+                            # if improvement_threshold < 1:
+                            #     improvement_threshold += 0.001
+                            best_val_loss = val_loss
+                            ### test acc
+                            y_outputs_to_zero_one = y_outputs[:, 0: task_marg] / \
+                                                    tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+                            y_outputs_ = sess.run(y_outputs_to_zero_one, feed_dict={x: dataset.test_set_x})
+
+                            y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
+                            y_pred = np.int64(y_outputs_ >= 5)
+                            test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
+                            print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".format(acc=test_acc,
+                                                                                                        best=best_test_acc,
+                                                                                                        e=best_test_acc_epoch,
+                                                                                                        b=best_test_acc_batch))
+                            if test_acc > best_test_acc:
+                                best_test_acc = test_acc
+                                best_test_acc_epoch = i
+                                best_test_acc_batch = dataset.batch_index
+
+                            ### correlation matrix
+                            Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
+                            W = np.zeros(shape=(self.output_size, 4096))
+                            for ii in range(W.shape[0]):
+                                W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
+                            cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
+                            cor_matrix1 = self.min_max_normalization(cor_matrix1)
+                            cor_matrix2 = sess.run(tf.transpose(
+                                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
+                            )
+                            cor_matrix2 = self.min_max_normalization(cor_matrix2)
+                            cor_dis = np.sum(np.square(cor_matrix1 - cor_matrix2))
+                            print("    distance {0}, add distance {1}.".format(cor_dis, cor_dis - last_cor_dis))
+                            last_cor_dis = cor_dis
+                    else:
+                        print("training step {0}, loss {1}".format(step, loss_))
+
+                    if end == 1:
+                        break
+
+                # ### save
+            cv2.imwrite(model_save_path + "cor_matrix1.png",
+                        cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            cv2.imwrite(model_save_path + "cor_matrix2.png",
+                        cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            saver.save(sess, model_save_path + 'my_model')
+            os.system('zip -r myfile.zip ./' + model_save_path)
+            # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+            # upload_data("myfile.zip", overwrite=True)
