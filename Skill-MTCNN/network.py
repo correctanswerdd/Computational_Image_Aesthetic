@@ -1060,9 +1060,6 @@ class Network(object):
                                 tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
                             )
                             cor_matrix2 = self.min_max_normalization(cor_matrix2)
-                            cor_dis = np.sum(np.square(cor_matrix1 - cor_matrix2))
-                            print("    distance {0}, add distance {1}.".format(cor_dis, cor_dis - last_cor_dis))
-                            last_cor_dis = cor_dis
                     else:
                         print("training step {0}, loss {1}".format(step, loss_))
 
