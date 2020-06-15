@@ -47,19 +47,6 @@ class Network(object):
         self.output_size = output_size
 
     def score2style(self, inputs):
-        mean = inputs[:, 0] * 1 \
-               + inputs[:, 1] * 2 \
-               + inputs[:, 2] * 3 \
-               + inputs[:, 3] * 4 \
-               + inputs[:, 4] * 5 \
-               + inputs[:, 5] * 6 \
-               + inputs[:, 6] * 7 \
-               + inputs[:, 7] * 8 \
-               + inputs[:, 8] * 9 \
-               + inputs[:, 9] * 10
-        mean = mean / tf.reduce_sum(inputs, axis=1)
-        _, variance = tf.nn.moments(inputs, axes=1)
-        inputs = tf.stack([mean, variance], axis=1, name='cor_input')
         with tf.variable_scope("Cor_Matrix"):
             output = slim.fully_connected(inputs, 14, scope='fc')
         return output
@@ -144,21 +131,8 @@ class Network(object):
                 plt.title('predict distribution')
                 plt.xlabel('vote')
                 plt.ylabel('number')
-                # plt.bar(np.array(range(0, 20, 2)), y_outputs_to_one[0], color="orange",
-                #         label='predict' + str(y_outputs_mean))
-                #score = [1,3,5,12,54,62,22,12,2,1] # 800749
-                # score = [2,11,34,100,68,22,5,0,0,1] #199165
-                # score = [6,19,31,64,38,4,2,2,0,0] # 423357
-                # score = [65, 69, 71, 83, 28, 9, 5, 2, 0, 0]  # 150075
-                # plt.bar(np.array(range(0, 21, 2)), np.array(score) / sum(score), color="darkblue",
-                #         label='true' + str(dataset.dis2mean(np.array(score)[np.newaxis, :])))
-                # plt.hist(y_outputs_to_one[0], bins=40, normed=0, facecolor="orange", edgecolor="black", alpha=0.7)
                 plt.plot(np.array(range(1, 11)), y_outputs_to_one[0], color="orange",
                          linewidth=1, linestyle=':', label='predict' + str(y_outputs_mean) , marker='o')
-                # plt.plot(np.array(range(1, 11)), np.array(score) / sum(score), color="darkblue",
-                #          linewidth=1, linestyle=':',
-                #          label='true' + str(dataset.dis2mean(np.array(score)[np.newaxis, :])),
-                #          marker='o')
                 plt.legend(loc=2)  # 图例展示位置，数字代表第几象限
                 plt.show()  # 显示图像
             else:
@@ -331,10 +305,10 @@ class Network(object):
         print(count)
         x = np.array(x, dtype=float)
         y = np.array(y, dtype=float)
-        # with open('x.pkl', 'wb') as f:
-        #     pickle.dump(x, f)
-        # with open('y.pkl', 'wb') as f:
-        #     pickle.dump(y, f)
+        with open('x.pkl', 'wb') as f:
+            pickle.dump(x, f)
+        with open('y.pkl', 'wb') as f:
+            pickle.dump(y, f)
 
     def load_img_of_skill_for_ROC(self):
         with open('x.pkl', 'rb') as f:
