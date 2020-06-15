@@ -1,4 +1,4 @@
-from data import AVAImages
+from dataset import AVAImages
 import os
 import numpy as np
 

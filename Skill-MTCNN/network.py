@@ -47,7 +47,19 @@ class Network(object):
         self.output_size = output_size
 
     def score2style(self, inputs):
-        # output = slim.stack(inputs, slim.fully_connected, [32, 14], scope='fc')
+        mean = inputs[:, 0] * 1 \
+               + inputs[:, 1] * 2 \
+               + inputs[:, 2] * 3 \
+               + inputs[:, 3] * 4 \
+               + inputs[:, 4] * 5 \
+               + inputs[:, 5] * 6 \
+               + inputs[:, 6] * 7 \
+               + inputs[:, 7] * 8 \
+               + inputs[:, 8] * 9 \
+               + inputs[:, 9] * 10
+        mean = mean / tf.reduce_sum(inputs, axis=1)
+        _, variance = tf.nn.moments(inputs, axes=1)
+        inputs = tf.stack([mean, variance], axis=1, name='cor_input')
         with tf.variable_scope("Cor_Matrix"):
             output = slim.fully_connected(inputs, 14, scope='fc')
         return output
@@ -926,7 +938,7 @@ class Network(object):
                     if end == 1:
                         break
 
-                #### save
+            #### save
             saver.save(sess, model_save_path + 'my_model')
             os.system('zip -r myfile.zip ./' + model_save_path)
             sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
@@ -991,6 +1003,7 @@ class Network(object):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
             WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
+            Wc = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')
 
             # lr weight decay
             learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
@@ -998,12 +1011,12 @@ class Network(object):
 
             # optimize
             opt = tf.train.AdamOptimizer(learning_rate)
-            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW)
+            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW + Wc)
             capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
                           for grad, var in gradient_var_all]
             train_op = opt.apply_gradients(capped_gvs)
             train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
-                                                                          var_list=train_theta + WW)
+                                                                          var_list=train_theta + WW + Wc)
             train_op_omega = tf.assign(omegaaa, self.update_omega(W))
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
@@ -1039,24 +1052,17 @@ class Network(object):
                         sess.run(upgrade_global_step)
 
                     if val:
-                        # y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.val_set_x})
-                        # y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
-                        # y_pred = np.int64(y_outputs_ >= 5)
-                        # val_acc = sum((y_pred-y_val)==0) / dataset.val_set_x.shape[0]
                         val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
                                                              th: cross_val_loss_transfer})
                         print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
                               format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
                         if val_loss < best_val_loss * improvement_threshold:
-                            # if improvement_threshold < 1:
-                            #     improvement_threshold += 0.001
                             best_val_loss = val_loss
-                            ### test acc
+                            # test acc
                             y_outputs_to_zero_one = y_outputs[:, 0: task_marg] / \
                                                     tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
                             y_outputs_ = sess.run(y_outputs_to_zero_one, feed_dict={x: dataset.test_set_x})
-
                             y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
                             y_pred = np.int64(y_outputs_ >= 5)
                             test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
@@ -1069,7 +1075,7 @@ class Network(object):
                                 best_test_acc_epoch = i
                                 best_test_acc_batch = dataset.batch_index
 
-                            ### correlation matrix
+                            # correlation matrix
                             Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
                             W = np.zeros(shape=(self.output_size, 4096))
                             for ii in range(W.shape[0]):
@@ -1089,12 +1095,12 @@ class Network(object):
                     if end == 1:
                         break
 
-                # ### save
+            # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png",
                         cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
             cv2.imwrite(model_save_path + "cor_matrix2.png",
                         cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
             saver.save(sess, model_save_path + 'my_model')
             os.system('zip -r myfile.zip ./' + model_save_path)
-            # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
-            # upload_data("myfile.zip", overwrite=True)
+            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+            upload_data("myfile.zip", overwrite=True)
