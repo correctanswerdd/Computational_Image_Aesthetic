@@ -951,7 +951,7 @@ class Network(object):
                                                                           keep_dims=True)
         y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
 
-        # y_mv
+        # cor_fc_layer
         y_mv = self.score2style(y_outputs_to_one)
 
         # other parameters
@@ -970,9 +970,9 @@ class Network(object):
                             tf.contrib.layers.apply_regularization(
                                 regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                                 weights_list=tf.trainable_variables()) +
-                            theta * tr_W_omega_WT +
-                            beta * self.style_loss(y_mv, y[:, 10:])
+                            theta * tr_W_omega_WT
                             )
+            loss_c = self.style_loss(y_mv, y[:, 10:])
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
@@ -985,12 +985,12 @@ class Network(object):
 
             # optimize
             opt = tf.train.AdamOptimizer(learning_rate)
-            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW + Wc)
+            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW)
             capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
                           for grad, var in gradient_var_all]
             train_op = opt.apply_gradients(capped_gvs)
-            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step,
-                                                                          var_list=train_theta + WW + Wc)
+            train_op_wc = tf.train.AdamOptimizer(learning_rate).minimize(loss_c, global_step=global_step, var_list=Wc)
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step, var_list=train_theta + WW)
             train_op_omega = tf.assign(omegaaa, self.update_omega(W))
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
@@ -998,7 +998,6 @@ class Network(object):
         train_theta_and_W_first = 20
         best_val_loss = 1000
         improvement_threshold = 0.999
-        last_cor_dis = 0.0
         best_test_acc = 0.0
         best_test_acc_epoch = 0
         best_test_acc_batch = 0
@@ -1012,17 +1011,14 @@ class Network(object):
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
                         cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
-                        train_op_, loss_ = sess.run([train_op_all, loss],
-                                                    feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
+                        train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
                     elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
                         sess.run(upgrade_global_step)
                     else:
                         cross_val_loss_transfer = sess.run(cross_val_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
                         for taskid in range(self.output_size):
-                            train_op_, loss_ = sess.run([train_op, loss],
-                                                        feed_dict={x: x_b, y: y_b,
-                                                                   th: cross_val_loss_transfer, task_id: taskid})
+                            train_op_, loss_ = sess.run([train_op, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer, task_id: taskid})
                         sess.run(upgrade_global_step)
 
                     if val:
@@ -1034,11 +1030,10 @@ class Network(object):
                         if val_loss < best_val_loss * improvement_threshold:
                             best_val_loss = val_loss
                             # test acc
-                            y_outputs_to_zero_one = y_outputs[:, 0: task_marg] / \
-                                                    tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
-                            y_outputs_ = sess.run(y_outputs_to_zero_one, feed_dict={x: dataset.test_set_x})
-                            y_outputs_ = dataset.dis2mean(y_outputs_[:, 0: 10])
-                            y_pred = np.int64(y_outputs_ >= 5)
+                            y_outputs_ = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+                            y_outputs_to_one_test = sess.run(y_outputs_, feed_dict={x: dataset.test_set_x})
+                            y_outputs_mean = dataset.dis2mean(y_outputs_to_one_test[:, 0: 10])
+                            y_pred = np.int64(y_outputs_mean >= 5)
                             test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
                             print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".format(acc=test_acc,
                                                                                                         best=best_test_acc,
@@ -1050,21 +1045,48 @@ class Network(object):
                                 best_test_acc_batch = dataset.batch_index
 
                             # correlation matrix
+                            # cor1
                             Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
                             W = np.zeros(shape=(self.output_size, 4096))
                             for ii in range(W.shape[0]):
                                 W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
                             cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
                             cor_matrix1 = self.min_max_normalization(cor_matrix1)
-                            cor_matrix2 = sess.run(tf.transpose(
-                                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
-                            )
-                            cor_matrix2 = self.min_max_normalization(cor_matrix2)
                     else:
                         print("training step {0}, loss {1}".format(step, loss_))
 
                     if end == 1:
                         break
+            # train wc
+            print("training of Wc ...")
+            best_val_loss = 1000
+            improvement_threshold = 0.999
+            patience = 4
+            i = 0
+            while i <= patience:
+                while True:
+                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    y_b[:, 0: fix_marg] = self.fixprob(y_b[:, 0: fix_marg])
+                    step = sess.run(global_step)
+                    if end == 1:
+                        break
+
+                    train_op_, loss_ = sess.run([train_op_wc, loss_c], feed_dict={x: x_b, y: y_b})
+                    if val:
+                        val_loss = sess.run(loss_c, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y})
+                        print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                              format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+
+                        if val_loss < best_val_loss * improvement_threshold:
+                            patience *= 2
+                            best_val_loss = val_loss
+                i += 1
+
+            # cor2
+            cor_matrix2 = sess.run(tf.transpose(
+                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
+            )
+            cor_matrix2 = self.min_max_normalization(cor_matrix2)
 
             # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png",
