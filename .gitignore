@@ -9,8 +9,7 @@ Skill-MTCNN/*.jpg
 Skill-MTCNN/*.jpeg
 
 # model
-Skill-MTCNN/model_MTCNN/**
-Skill-MTCNN/model_score_CNN/**
+Skill-MTCNN/model_*/**
 
 # data
 Skill-MTCNN/test_ROCcurve/**
