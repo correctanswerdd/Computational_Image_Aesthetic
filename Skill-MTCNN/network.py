@@ -457,7 +457,7 @@ class Network(object):
         multi = tf.tile(y_outputs_sum, multiples=[1, fix_marg])
         return y_outputs / multi
 
-    def distribution_loss(self, y_outputs, y, th, fix_marg):
+    def distribution_loss(self, y_outputs, y, th):
         # y_outputs = self.dis_reg(y_outputs, fix_marg)
         jsd = self.JSD(y_outputs, y)
         return self.r_kurtosis(y_outputs, th), jsd
@@ -547,8 +547,7 @@ class Network(object):
             task_id = tf.placeholder(tf.int32)
         y_list = self.MTCNN(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
-        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
-                                                                      keep_dims=True)
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
         y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
         y_mv = self.score2style(y_outputs_to_one)
         global_step = tf.Variable(0, trainable=False)
@@ -560,7 +559,8 @@ class Network(object):
             self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
-            r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
+            r_kus = self.r_kurtosis(y_outputs_to_one, th)
+            dis_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
             loss = r_kus * (dis_loss +
                             gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) +
                             tf.contrib.layers.apply_regularization(
