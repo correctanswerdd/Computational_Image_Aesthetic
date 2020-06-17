@@ -947,8 +947,7 @@ class Network(object):
             task_id = tf.placeholder(tf.int32)
         y_list = self.MTCNN_v2(x, True)  # y_outputs = (None, 24)
         y_outputs = tf.concat(y_list, axis=1)
-        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg],
-                                                                          keep_dims=True)
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
         y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
 
         # other parameters
@@ -961,7 +960,8 @@ class Network(object):
             self.ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = self.tr(W, omegaaa)
-            r_kus, dis_loss = self.distribution_loss(y_outputs_to_one, y[:, 0: task_marg], th, fix_marg)
+            r_kus = self.r_kurtosis(y_outputs_to_one, th)
+            dis_loss = self.JSD(y_outputs_to_one, y[:, 0: task_marg])
             loss = r_kus * (dis_loss +
                             gamma * self.style_loss(y_outputs[:, task_marg:], y[:, task_marg:]) +
                             tf.contrib.layers.apply_regularization(
@@ -1082,12 +1082,13 @@ class Network(object):
 
         # cor_fc_layer
         y_outputs = self.score2style(x)
+        y_outputs = self.tf_fixprob(y_outputs)
 
         # other parameters
         global_step = tf.Variable(0, trainable=False)
 
         with tf.name_scope("Loss"):
-            loss_c = self.style_loss(y_outputs, y)
+            loss_c = self.JSD(y_outputs, y)
         with tf.name_scope("Train"):
             # get variables
             Wc = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')
@@ -1112,14 +1113,16 @@ class Network(object):
             while i <= patience:
                 while True:
                     _, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
-                    # y_b[:, 0: 10] = self.fixprob(y_b[:, 0: 10])
+                    y_b[:, 10:] = self.fixprob(y_b[:, 10:])
                     sess.run(global_step)
                     if end == 1:
                         break
 
                     train_op_, loss_ = sess.run([train_op_wc, loss_c], feed_dict={x: y_b[:, 0: 10], y: y_b[:, 10:]})
                     if val:
-                        val_loss = sess.run(loss_c, feed_dict={x: dataset.val_set_y[:, 0: 10], y: dataset.val_set_y[:, 10:]})
+                        val_data = dataset.val_set_y
+                        val_data[:, 10:] = self.fixprob(val_data[:, 10:])
+                        val_loss = sess.run(loss_c, feed_dict={x: val_data[:, 0: 10], y: val_data[:, 10:]})
                         print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
                               format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
