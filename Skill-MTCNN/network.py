@@ -1069,7 +1069,7 @@ class Network(object):
         dataset = AVAImages()
         if val:
             dataset.read_data(read_dir=data, flag="val")
-            # dataset.val_set_y[:, 0: 10] = self.fixprob(dataset.val_set_y[:, 0: 10])
+            dataset.val_set_y[:, 10:] = self.fixprob(dataset.val_set_y[:, 10:])
 
         # load parameters
         dataset.read_batch_cfg()
@@ -1120,9 +1120,7 @@ class Network(object):
 
                     train_op_, loss_ = sess.run([train_op_wc, loss_c], feed_dict={x: y_b[:, 0: 10], y: y_b[:, 10:]})
                     if val:
-                        val_data = dataset.val_set_y
-                        val_data[:, 10:] = self.fixprob(val_data[:, 10:])
-                        val_loss = sess.run(loss_c, feed_dict={x: val_data[:, 0: 10], y: val_data[:, 10:]})
+                        val_loss = sess.run(loss_c, feed_dict={x: dataset.val_set_y[:, 0: 10], y: dataset.val_set_y[:, 10:]})
                         print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
                               format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
@@ -1141,6 +1139,98 @@ class Network(object):
             cv2.imwrite(model_save_path + "cor_matrix2.png",
                         cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
             saver.save(sess, model_save_path + 'my_model')
-            # os.system('zip -r myfile.zip ./' + model_save_path)
-            # sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
-            # upload_data("myfile.zip", overwrite=True)
+
+    def get_uninitialized_variables(self, sess):
+        global_vars = tf.global_variables()
+        is_not_initialized = sess.run([tf.is_variable_initialized(var) for var in global_vars])
+        not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
+        print([str(i.name) for i in not_initialized_vars])
+        return not_initialized_vars
+
+    def train_cor_matrix_predict(self, data='dataset/', model_read_path='./model_MTCNN_v2', model_save_path='./model_cor_matrix2/'):
+        folder = os.path.exists(model_save_path)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+        # load data
+        dataset = AVAImages()
+
+        # load parameters
+        dataset.read_batch_cfg()
+        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+
+        # placeholders
+        w, h, c = self.input_size
+        with tf.name_scope("Inputs"):
+            x_train = tf.placeholder(tf.float32, [None, 10])
+            y_train = tf.placeholder(tf.float32, [None, 14])
+            x = tf.placeholder(tf.float32, [None, w, h, c])
+        y_list = self.MTCNN_v2(x, True)  # y_outputs = (None, 24)
+        y_outputs_mtcnn = tf.concat(y_list, axis=1)
+        # y_outputs_to_one_ori = y_outputs[:, 0: 10] / tf.reduce_sum(y_outputs[:, 0: 10], keep_dims=True)
+        # y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
+
+        # cor_fc_layer
+        y_outputs = self.score2style(x_train)
+        y_outputs = self.tf_fixprob(y_outputs)
+
+        # other parameters
+        global_step = tf.Variable(0, trainable=False)
+
+        with tf.name_scope("Loss"):
+            loss_c = self.JSD(y_outputs, y_train)
+        with tf.name_scope("Train"):
+            # get variables
+            Wc = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')
+
+            # lr weight decay
+            learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
+                                                       decay_steps=10, decay_rate=learning_rate_decay, staircase=False)
+
+            # optimize
+            train_op_wc = tf.train.AdamOptimizer(learning_rate).minimize(loss_c, global_step=global_step, var_list=Wc)
+
+        variables_to_restore = slim.get_variables_to_restore(include=['Theta', 'W'])  # 单引号指只恢复一个层。双引号会恢复含该内容的所有层。
+        re_saver = tf.train.Saver(variables_to_restore)  # 如果这里不指定特定的参数，sess会把目前graph中所有都恢复
+        tf_vars = tf.trainable_variables(scope="Cor_Matrix")
+        saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2, var_list=tf_vars)
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_read_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                re_saver.restore(sess, ckpt.model_checkpoint_path)
+            un_init = tf.variables_initializer(self.get_uninitialized_variables(sess))  # 获取没有初始化(通过已有model加载)的变量
+            sess.run(un_init)  # 对没有初始化的变量进行初始化并训练.
+
+            # train wc
+            print("training of Wc ...")
+            patience = 4
+            i = 0
+            while i <= patience:
+                while True:
+                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    sess.run(global_step)
+                    if end == 1:
+                        break
+
+                    y_predict = sess.run(y_outputs_mtcnn, feed_dict={x: x_b})
+                    y_predict[:, 10:] = self.fixprob(y_predict[:, 10:])
+                    train_op_, loss_ = sess.run([train_op_wc, loss_c], feed_dict={x_train: y_predict[:, 0: 10],
+                                                                                  y_train: y_predict[:, 10:]})
+
+                    print("epoch {e} batch {b_index}/{b} loss {loss}".
+                          format(e=i+1, b_index=dataset.batch_index, b=dataset.batch_index_max, loss=loss_))
+                i += 1
+
+            # cor2
+            cor_matrix2 = sess.run(tf.transpose(
+                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')[0])
+            )
+            cor_matrix2 = self.min_max_normalization(cor_matrix2)
+
+            # ### save
+            cv2.imwrite(model_save_path + "cor_matrix2.png",
+                        cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            saver.save(sess, model_save_path + 'my_model')
+            os.system('zip -r myfile.zip ./' + model_save_path)
+            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+            upload_data("myfile.zip", overwrite=True)
