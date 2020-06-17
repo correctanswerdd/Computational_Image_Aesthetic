@@ -7,7 +7,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 def main(_):
     net = Network(input_size=(227, 227, 3),
                   output_size=24)
-    net.train_MTCNN_v2(val=True, task_marg=10)
+    net.train_cor_matrix(val=True, task_marg=10)
 
 
 if __name__ == '__main__':

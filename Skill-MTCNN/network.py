@@ -951,9 +951,6 @@ class Network(object):
                                                                           keep_dims=True)
         y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
 
-        # cor_fc_layer
-        y_mv = self.score2style(y_outputs_to_one)
-
         # other parameters
         global_step = tf.Variable(0, trainable=False)
         upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
@@ -972,12 +969,10 @@ class Network(object):
                                 weights_list=tf.trainable_variables()) +
                             theta * tr_W_omega_WT
                             )
-            loss_c = self.style_loss(y_mv, y[:, 10:])
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
             WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
-            Wc = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')
 
             # lr weight decay
             learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
@@ -989,7 +984,6 @@ class Network(object):
             capped_gvs = [(self.scalar_for_weights(grad, var, omegaaa, task_id), var)
                           for grad, var in gradient_var_all]
             train_op = opt.apply_gradients(capped_gvs)
-            train_op_wc = tf.train.AdamOptimizer(learning_rate).minimize(loss_c, global_step=global_step, var_list=Wc)
             train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step, var_list=train_theta + WW)
             train_op_omega = tf.assign(omegaaa, self.update_omega(W))
 
@@ -1057,6 +1051,76 @@ class Network(object):
 
                     if end == 1:
                         break
+
+            # ### save
+            cv2.imwrite(model_save_path + "cor_matrix1.png",
+                        cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            saver.save(sess, model_save_path + 'my_model')
+            os.system('zip -r myfile.zip ./' + model_save_path)
+            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
+            upload_data("myfile.zip", overwrite=True)
+
+    def get_uninitialized_variables(self, sess):
+        global_vars = tf.global_variables()
+        is_not_initialized = sess.run([tf.is_variable_initialized(var) for var in global_vars])
+        not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
+        print([str(i.name) for i in not_initialized_vars])
+        return not_initialized_vars
+
+    def train_cor_matrix(self, data='dataset/', model_save_path='./model_cor_matrix2/', model_read_path='./model_MTCNN_v2/', val=True, task_marg=10, fix_marg=10):
+        folder = os.path.exists(model_save_path)
+        if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+            os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+        # load data
+        dataset = AVAImages()
+        if val:
+            dataset.read_data(read_dir=data, flag="val")
+            dataset.val_set_y[:, 0: fix_marg] = self.fixprob(dataset.val_set_y[:, 0: fix_marg])
+
+        # load parameters
+        dataset.read_batch_cfg()
+        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+
+        # placeholders
+        w, h, c = self.input_size
+        with tf.name_scope("Inputs"):
+            x = tf.placeholder(tf.float32, [None, w, h, c])
+            y = tf.placeholder(tf.float32, [None, self.output_size])
+        y_list = self.MTCNN_v2(x, True)  # y_outputs = (None, 24)
+        y_outputs = tf.concat(y_list, axis=1)
+        y_outputs_to_one_ori = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
+        y_outputs_to_one = self.tf_fixprob(y_outputs_to_one_ori)
+
+        # cor_fc_layer
+        y_mv = self.score2style(y_outputs_to_one)
+
+        # other parameters
+        global_step = tf.Variable(0, trainable=False)
+
+        with tf.name_scope("Loss"):
+            loss_c = self.style_loss(y_mv, y[:, 10:])
+        with tf.name_scope("Train"):
+            # get variables
+            Wc = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Cor_Matrix')
+
+            # lr weight decay
+            learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
+                                                       decay_steps=10, decay_rate=learning_rate_decay, staircase=False)
+
+            # optimize
+            train_op_wc = tf.train.AdamOptimizer(learning_rate).minimize(loss_c, global_step=global_step, var_list=Wc)
+
+        variables_to_restore = slim.get_variables_to_restore(include=['Theta', 'W'])  # 单引号指只恢复一个层。双引号会恢复含该内容的所有层。
+        re_saver = tf.train.Saver(variables_to_restore)  # 如果这里不指定特定的参数，sess会把目前graph中所有都恢复
+        saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
+        with tf.Session() as sess:
+            ckpt = tf.train.get_checkpoint_state(model_read_path)
+            if ckpt and ckpt.model_checkpoint_path:
+                re_saver.restore(sess, ckpt.model_checkpoint_path)
+            un_init = tf.variables_initializer(self.get_uninitialized_variables(sess))  # 获取没有初始化(通过已有model加载)的变量
+            sess.run(un_init)  # 对没有初始化的变量进行初始化并训练.
+
             # train wc
             print("training of Wc ...")
             best_val_loss = 1000
@@ -1089,8 +1153,6 @@ class Network(object):
             cor_matrix2 = self.min_max_normalization(cor_matrix2)
 
             # ### save
-            cv2.imwrite(model_save_path + "cor_matrix1.png",
-                        cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
             cv2.imwrite(model_save_path + "cor_matrix2.png",
                         cv2.resize(cor_matrix2 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
             saver.save(sess, model_save_path + 'my_model')
