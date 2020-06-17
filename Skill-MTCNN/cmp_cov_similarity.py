@@ -2,8 +2,8 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-img1 = cv2.imread("model_MTCNN/cor_matrix1.png")
-img2 = cv2.imread("model_MTCNN/cor_matrix2.png")
+img1 = cv2.imread("cor_matrix/cor_matrix1.png")
+img2 = cv2.imread("cor_matrix/cor_matrix2.png")
 
 H1 = cv2.calcHist([img1], [1], None, [256], [0, 256])
 H1 = cv2.normalize(H1, H1, 0, 1, cv2.NORM_MINMAX, -1)  # 对图片进行归一化处理
