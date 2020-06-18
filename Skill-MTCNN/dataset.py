@@ -286,13 +286,13 @@ class AVAImages:
                + score_distribution[:, 9] * 10
         return mean / np.sum(score_distribution, axis=1)
 
-    def read_batch_cfg(self):
+    def read_batch_cfg(self, task="Skill-MTCNN"):
         # 创建管理对象
         conf = configparser.ConfigParser()
         # 读ini文件
         conf.read("config.ini")  # python3
-        self.batch_index_max = conf.getint("parameter", "batch_index_max")
-        self.batch_size = conf.getint("parameter", "batch_size")
+        self.batch_index_max = conf.getint(task, "batch_index_max")
+        self.batch_size = conf.getint(task, "batch_size")
 
     def cal_prob(self):
         """

@@ -383,18 +383,22 @@ class Network(object):
         with open(dir + 'roc_curve.pkl', 'wb') as f:
             pickle.dump(cuv, f)
 
-    def read_cfg(self):
+    def read_cfg(self, task="Skill-MTCNN"):
         # 创建管理对象
         conf = configparser.ConfigParser()
         # 读ini文件
         conf.read("config.ini", encoding="utf-8")  # python3
-        return conf.getfloat("parameter", "learning_rate"),\
-               conf.getfloat("parameter", "learning_rate_decay"),\
-               conf.getint("parameter", "epoch"), \
-               conf.getfloat("parameter", "alpha"), \
-               conf.getfloat("parameter", "beta"), \
-               conf.getfloat("parameter", "gamma"), \
-               conf.getfloat("parameter", "theta")
+        if task == "Skill-MTCNN":
+            return conf.getfloat(task, "learning_rate"),\
+                   conf.getfloat(task, "learning_rate_decay"),\
+                   conf.getint(task, "epoch"), \
+                   conf.getfloat(task, "alpha"), \
+                   conf.getfloat(task, "gamma"), \
+                   conf.getfloat(task, "theta")
+        elif task == "Cor_Matrix":
+            return conf.getfloat(task, "learning_rate"), \
+                   conf.getfloat(task, "learning_rate_decay"), \
+                   conf.getint(task, "epoch")
 
     def fixprob(self, att):
         att = att + 1e-9
@@ -935,8 +939,8 @@ class Network(object):
         dataset.Th_y[:, 0: fix_marg] = self.fixprob(dataset.Th_y[:, 0: fix_marg])
 
         # load parameters
-        dataset.read_batch_cfg()
-        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+        dataset.read_batch_cfg(task="Skill-MTCNN")
+        learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = self.read_cfg(task="Skill-MTCNN")
 
         # placeholders
         w, h, c = self.input_size
@@ -967,8 +971,7 @@ class Network(object):
                             tf.contrib.layers.apply_regularization(
                                 regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                                 weights_list=tf.trainable_variables()) +
-                            theta * tr_W_omega_WT
-                            )
+                            theta * tr_W_omega_WT)
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
@@ -991,13 +994,17 @@ class Network(object):
         cross_val_loss_transfer = 0
         train_theta_and_W_first = 20
         best_val_loss = 1000
+        best_val = 0
+        patience = 60
+        stop_flag = False
         improvement_threshold = 0.999
         best_test_acc = 0.0
         best_test_acc_epoch = 0
         best_test_acc_batch = 0
+        i = 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            for i in range(epoch):
+            while i <= epoch and not stop_flag:
                 while True:
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
@@ -1023,6 +1030,7 @@ class Network(object):
 
                         if val_loss < best_val_loss * improvement_threshold:
                             best_val_loss = val_loss
+                            best_val = step  # 记录最小val所对应的batch index
                             # test acc
                             y_outputs_ = y_outputs[:, 0: task_marg] / tf.reduce_sum(y_outputs[:, 0: task_marg], keep_dims=True)
                             y_outputs_to_one_test = sess.run(y_outputs_, feed_dict={x: dataset.test_set_x})
@@ -1038,27 +1046,33 @@ class Network(object):
                                 best_test_acc_epoch = i
                                 best_test_acc_batch = dataset.batch_index
 
-                            # correlation matrix
-                            # cor1
-                            Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
-                            W = np.zeros(shape=(self.output_size, 4096))
-                            for ii in range(W.shape[0]):
-                                W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
-                            cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
-                            cor_matrix1 = self.min_max_normalization(cor_matrix1)
+                        # 如果连着几个batch的val loss都没下降，则停止训练
+                        if step - best_val > patience:
+                            stop_flag = True
+                            break
                     else:
                         print("training step {0}, loss {1}".format(step, loss_))
 
-                    if end == 1:
+                    if end == 1:  # 一个epoch结束
                         break
+                i += 1
 
-            # ### save
+            # correlation matrix
+            # cor1
+            Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
+            W = np.zeros(shape=(self.output_size, 4096))
+            for ii in range(W.shape[0]):
+                W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
+            cor_matrix1 = self.print_task_correlation(W, task_marg, self.output_size - task_marg)
+            cor_matrix1 = self.min_max_normalization(cor_matrix1)
             cv2.imwrite(model_save_path + "cor_matrix1.png",
                         cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+
+            # ### save
             saver.save(sess, model_save_path + 'my_model')
-            os.system('zip -r myfile.zip ./' + model_save_path)
-            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
-            upload_data("myfile.zip", overwrite=True)
+            os.system('zip -r mtcnn_v2.zip ./' + model_save_path)
+            sava_train_model(model_file="mtcnn_v2.zip", dir_name="./file", overwrite=True)
+            upload_data("mtcnn_v2.zip", overwrite=True)
 
     def train_cor_matrix_label(self, data='dataset/', model_save_path='./model_cor_matrix2/', val=True):
         folder = os.path.exists(model_save_path)
@@ -1156,8 +1170,8 @@ class Network(object):
         dataset = AVAImages()
 
         # load parameters
-        dataset.read_batch_cfg()
-        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = self.read_cfg()
+        dataset.read_batch_cfg(task="Cor_Matrix")
+        learning_rate, learning_rate_decay, epoch= self.read_cfg(task="Cor_Matrix")
 
         # placeholders
         w, h, c = self.input_size
@@ -1203,9 +1217,10 @@ class Network(object):
 
             # train wc
             print("training of Wc ...")
+            best_loss = 1000
             patience = 4
             i = 0
-            while i <= patience:
+            while i <= patience or i <= epoch:
                 while True:
                     x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
                     sess.run(global_step)
@@ -1216,9 +1231,11 @@ class Network(object):
                     y_predict[:, 10:] = self.fixprob(y_predict[:, 10:])
                     train_op_, loss_ = sess.run([train_op_wc, loss_c], feed_dict={x_train: y_predict[:, 0: 10],
                                                                                   y_train: y_predict[:, 10:]})
-
                     print("epoch {e} batch {b_index}/{b} loss {loss}".
                           format(e=i+1, b_index=dataset.batch_index, b=dataset.batch_index_max, loss=loss_))
+                if loss_ <= best_loss:
+                    best_loss = loss_
+                    patience *= 2
                 i += 1
 
             # cor2
