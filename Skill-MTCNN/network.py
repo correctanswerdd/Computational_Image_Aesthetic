@@ -1,6 +1,6 @@
 from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
-from dataset_utils import dis2mean, index2score_dis, load_data
+from dataset_utils import dis2mean, get_index2score_dis, load_data
 from network_utils import MTCNN_v2, JSD, distribution_loss, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
     tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization
 import os
@@ -32,7 +32,7 @@ class Network(object):
         img = img[np.newaxis, :]
         w, h, c = self.input_size
         x = tf.placeholder(tf.float32, [None, w, h, c])
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
 
         saver = tf.train.Saver()
         with tf.Session() as sess:
@@ -67,7 +67,7 @@ class Network(object):
 
         w, h, c = self.input_size
         x = tf.placeholder(tf.float32, [None, w, h, c])
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
 
         saver = tf.train.Saver()
         with tf.Session() as sess:
@@ -115,7 +115,7 @@ class Network(object):
 
         w, h, c = self.input_size
         x = tf.placeholder(tf.float32, [None, w, h, c])
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
 
         saver = tf.train.Saver()
         with tf.Session() as sess:
@@ -153,7 +153,7 @@ class Network(object):
         # load weights
         w, h, c = self.input_size
         x = tf.placeholder(tf.float32, [None, w, h, c])
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
 
         saver = tf.train.Saver()
         with tf.Session() as sess:
@@ -190,7 +190,7 @@ class Network(object):
         # load weights
         w, h, c = self.input_size
         x = tf.placeholder(tf.float32, [None, w, h, c])
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
 
         saver = tf.train.Saver()
         with tf.Session() as sess:
@@ -253,7 +253,7 @@ class Network(object):
         dataset = AVAImages()
         dataset.load_data()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        y_test = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
+        y_test = dis2mean(dataset.test_set_y[:, 0: 10])
         y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
         dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
         dataset.read_batch_cfg()
@@ -264,14 +264,17 @@ class Network(object):
             x = tf.placeholder(tf.float32, [None, w, h, c])
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
-        y_outputs = tf_fixprob(y_outputs[:, 0: 10])
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
+        y_outputs_fix1 = tf_fixprob(y_outputs[:, 0: 10])
+        y_outputs_fix2 = y_outputs[:, 10:]
+        y_outputs_fix = tf.concat([y_outputs_fix1, y_outputs_fix2], axis=1, name='concat')
+
         global_step = tf.Variable(0, trainable=False)
         upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
-            r_kus = r_kurtosis(y_outputs[:, 0: 10], th)
-            dis_loss = JSD(y_outputs[:, 0: 10], y[:, 0: 10])
+            r_kus = r_kurtosis(y_outputs_fix[:, 0: 10], th)
+            dis_loss = JSD(y_outputs_fix[:, 0: 10], y[:, 0: 10])
             loss = r_kus * dis_loss
         with tf.name_scope("Train"):
             # get variables
@@ -339,15 +342,15 @@ class Network(object):
 
         # load data
         dataset = AVAImages()
-        dataset.load_data()
+        dataset.load_dataset()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        y_test = dataset.dis2mean(dataset.test_set_y[:, 0: 10])
+        y_test = dis2mean(dataset.test_set_y[:, 0: 10])
         y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
         dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
 
         # load parameters
         dataset.read_batch_cfg(task="Skill-MTCNN")
-        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = read_cfg(task="Skill-MTCNN")
+        learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
 
         # placeholders
         w, h, c = self.input_size
@@ -356,8 +359,10 @@ class Network(object):
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
             task_id = tf.placeholder(tf.int32)
-        y_outputs = MTCNN_v2(intputs=x, outputs=self.output_size, training=True)
-        y_outputs = tf_fixprob(y_outputs[:, 0: 10])
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
+        y_outputs_fix1 = tf_fixprob(y_outputs[:, 0: 10])
+        y_outputs_fix2 = y_outputs[:, 10:]
+        y_outputs_fix = tf.concat([y_outputs_fix1, y_outputs_fix2], axis=1)
 
         # other parameters
         global_step = tf.Variable(0, trainable=False)
@@ -368,10 +373,10 @@ class Network(object):
             ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = tr(W, omegaaa)
-            r_kus = r_kurtosis(y_outputs[:, 0: 10], th)
-            dis_loss = JSD(y_outputs[:, 0: 10], y[:, 0: 10])
+            r_kus = r_kurtosis(y_outputs_fix[:, 0: 10], th)
+            dis_loss = JSD(y_outputs_fix[:, 0: 10], y[:, 0: 10])
             loss = r_kus * (dis_loss +
-                            gamma * style_loss(y_outputs[:, 10:], y[:, 10:]) +
+                            gamma * style_loss(y_outputs_fix[:, 10:], y[:, 10:]) +
                             tf.contrib.layers.apply_regularization(
                                 regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                                 weights_list=tf.trainable_variables()) +
