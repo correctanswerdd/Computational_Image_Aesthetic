@@ -17,10 +17,19 @@ def MTCNN_v2(inputs, outputs, training=True):
         feature_vec, _ = resnet_v2_50(inputs=inputs, num_classes=4096, is_training=training)
     with tf.variable_scope("W"):
         l7_list1 = [slim.fully_connected(feature_vec, 1) for i in range(10)]
+        l7_concat1 = tf.concat(l7_list1, axis=1)
+        l7_concat1 = l7_concat1 / tf.reduce_sum(l7_concat1, axis=1, keep_dims=True)
+
         l7_list2 = [slim.fully_connected(feature_vec, 1) for i in range(outputs-10)]
-    l7_concat1 = tf.concat(l7_list1, axis=1)
-    l7_concat1 = l7_concat1 / tf.reduce_sum(l7_concat1[:, 0: 10], keep_dims=True)
-    l7_concat2 = tf.concat(l7_list2, axis=1)
+        l7_concat2 = tf.concat(l7_list2, axis=1)
+
+        # for i in range(10):
+        #     x = slim.fully_connected(feature_vec, 1)
+        #     l7_concat1 = x if i == 0 else tf.concat([l7_concat1, x], axis=1)
+        # for i in range(outputs-10):
+        #     x = slim.fully_connected(feature_vec, 1)
+        #     l7_concat2 = x if i == 0 else tf.concat([l7_concat2, x], axis=1)
+
     return tf.concat([l7_concat1, l7_concat2], axis=1, name='concat')
 
 
@@ -45,8 +54,10 @@ def MTCNN(inputs, outputs, training=True):
         l6 = slim.fully_connected(l5, 4096)
 
     with tf.variable_scope("W"):
-        l7_list = [slim.fully_connected(l6, 1) for i in range(outputs)]
-    return tf.concat(l7_list, axis=1)
+        for i in range(outputs):
+            x = slim.fully_connected(l6, 1)
+            l7_list = x if i == 0 else tf.concat([l7_list, x], axis=1)
+    return l7_list
 
 
 # #####################################################################################

@@ -360,9 +360,7 @@ class Network(object):
             th = tf.placeholder(tf.float32)
             task_id = tf.placeholder(tf.int32)
         y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
-        y_outputs_fix1 = tf_fixprob(y_outputs[:, 0: 10])
-        y_outputs_fix2 = y_outputs[:, 10:]
-        y_outputs_fix = tf.concat([y_outputs_fix1, y_outputs_fix2], axis=1)
+        y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
 
         # other parameters
         global_step = tf.Variable(0, trainable=False)
@@ -373,10 +371,10 @@ class Network(object):
             ini_omega(self.output_size)
             omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
             tr_W_omega_WT = tr(W, omegaaa)
-            r_kus = r_kurtosis(y_outputs_fix[:, 0: 10], th)
-            dis_loss = JSD(y_outputs_fix[:, 0: 10], y[:, 0: 10])
+            r_kus = r_kurtosis(y_outputs_fix, th)
+            dis_loss = JSD(y_outputs_fix, y[:, 0: 10])
             loss = r_kus * (dis_loss +
-                            gamma * style_loss(y_outputs_fix[:, 10:], y[:, 10:]) +
+                            gamma * style_loss(y_outputs[:, 10:], y[:, 10:]) +
                             tf.contrib.layers.apply_regularization(
                                 regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
                                 weights_list=tf.trainable_variables()) +
@@ -469,15 +467,10 @@ class Network(object):
                     if step - best_val > patience:
                         stop_flag = True
                         break
-                    else:
-                        print("training step {0}, loss {1}".format(step, loss_))
 
                     if end == 1:  # 一个epoch结束
                         break
                 i += 1
-
-
-
 
             # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
