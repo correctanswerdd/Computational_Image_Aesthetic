@@ -1,12 +1,17 @@
 import pickle
 import configparser
-from dataset_utils import split, split_v2, create_setx_for_Th, create_train_set, select_img_of_same_skill, load_data
+from dataset_utils import split, split_v2, create_setx_for_Th, create_train_set, select_img_of_same_skill, load_data, split_test_set
 
 class AVAImages:
     def __init__(self):
         self.batch_index = 0
         self.batch_index_max = 0
         self.batch_size = 0
+
+        self.test_batch_index = 0
+        self.test_batch_size = 0
+        self.test_batch_index_max = 0
+        self.test_total = 0
 
         self.train_set_x = 0
         self.train_set_y = 0
@@ -22,27 +27,44 @@ class AVAImages:
         create_setx_for_Th(root_dir=root_dir)
         create_train_set(root_dir=root_dir, batch_size=32, size=227, if_write=False)
 
-    def load_next_batch_quicker(self, read_dir='dataset/'):
+    def create_batch_test_set(self, root_dir='dataset/'):
+        split_test_set(root_dir)
+
+    def load_next_batch_quicker(self, flag="train"):
         """
         :param max_block: max block index in dir
         :return: 1 -> last batch
         """
-        with open(read_dir + 'train_raw/train_set_x_' + str(self.batch_index) + '.pkl', 'rb') as f:
-            x = pickle.load(f)
-        with open(read_dir + 'train_raw/train_set_y_' + str(self.batch_index) + '.pkl', 'rb') as f:
-            y = pickle.load(f)
-        if self.batch_index == self.batch_index_max:
-            print('last batch!')
-            self.batch_index = 0
-            flag = 1
-        else:
-            self.batch_index += 1
-            flag = 0
-        return x, y, flag
+        if flag == "train":
+            with open('dataset/train_raw/train_set_x_' + str(self.batch_index) + '.pkl', 'rb') as f:
+                x = pickle.load(f)
+            with open('dataset/train_raw/train_set_y_' + str(self.batch_index) + '.pkl', 'rb') as f:
+                y = pickle.load(f)
+            if self.batch_index == self.batch_index_max:
+                print('last batch!')
+                self.batch_index = 0
+                flag = 1
+            else:
+                self.batch_index += 1
+                flag = 0
+            return x, y, flag
+        elif flag == "test":
+            with open('dataset/testbatch/test_set_x_' + str(self.test_batch_index) + '.pkl', 'rb') as f:
+                x = pickle.load(f)
+            with open('dataset/testbatch/test_set_y_' + str(self.test_batch_index) + '.pkl', 'rb') as f:
+                y = pickle.load(f)
+            if self.test_batch_index == self.test_batch_index_max:
+                print('last batch!')
+                self.test_batch_index = 0
+                flag = 1
+            else:
+                self.test_batch_index += 1
+                flag = 0
+            return x, y, flag
 
     def load_dataset(self):
         # self.train_set_x, self.train_set_y = load_data(flag="train")
-        self.test_set_x, self.test_set_y = load_data(flag="test")
+        # self.test_set_x, self.test_set_y = load_data(flag="test")
         self.val_set_x, self.val_set_y = load_data(flag="val")
         self.Th_x, self.Th_y = load_data(flag="Th")
 
@@ -51,8 +73,13 @@ class AVAImages:
         conf = configparser.ConfigParser()
         # 读ini文件
         conf.read("config.ini")  # python3
-        self.batch_index_max = conf.getint(task, "batch_index_max")
-        self.batch_size = conf.getint(task, "batch_size")
+        if task == "TestBatch":
+            self.test_batch_index_max = conf.getint(task, "batch_index_max")
+            self.test_batch_size = conf.getint(task, "batch_size")
+            self.test_total = conf.getint(task, "total")
+        else:
+            self.batch_index_max = conf.getint(task, "batch_index_max")
+            self.batch_size = conf.getint(task, "batch_size")
 
     def select_img(self, skill_index=10):
         """
@@ -69,3 +96,4 @@ class AVAImages:
 #########################调用##################
 # data = AVAImages()
 # data.create_skillmtcnn_dataset()
+# data.create_batch_test_set()

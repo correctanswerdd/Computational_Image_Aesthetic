@@ -5,6 +5,7 @@ import pickle
 import configparser
 from progressbar import ProgressBar
 
+
 def split(root_dir="./", test_prob=0.2, val_prob=0.05, train_prob=0.75):
     """
     函数功能：
@@ -164,6 +165,42 @@ def split_v2(root_dir, test_prob=0.2, val_prob=0.05, train_prob=0.75):
     save_data(save_dir="dataset/", data=data)
 
 
+def split_test_set(root_dir, save_dir='testbatch/', batch_size=32, if_write=False):
+    test_set_x, test_set_y = load_data(root_dir, flag="test")
+
+    folder = os.path.exists(save_dir)
+    if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+        os.makedirs(save_dir)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+    i = 0
+    total = test_set_x.shape[0]
+    it = total // batch_size
+    if total % batch_size == 0:
+        it -= 1
+    batch_index_max = it  # it是最后一个batch的起始index
+
+    progress = ProgressBar(it)
+    progress.start()
+    while i < it:
+        with open(root_dir + save_dir + "test_set_x_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(test_set_x[i * batch_size: (i + 1) * batch_size, :, :, :], f)
+        with open(root_dir + save_dir + "test_set_y_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(test_set_y[i * batch_size: (i + 1) * batch_size], f)
+        i += 1
+        progress.show_progress(i)
+    progress.end()
+
+    print('last block!')
+    with open(root_dir + save_dir + "test_set_x_" + str(i) + ".pkl", "wb") as f:
+        pickle.dump(test_set_x[i * batch_size: total, :, :, :], f)
+    with open(root_dir + save_dir + "test_set_y_" + str(i) + ".pkl", "wb") as f:
+        pickle.dump(test_set_y[i * batch_size: total], f)
+
+    if if_write:
+        data = batch_size, batch_index_max, test_set_x.shape[0]
+        write_conf(data, task="TestBatch")
+
+
 def urls_to_images_no_check(urls, root_dir, file_dir='AVA_dataset/images/', size=224, flag=1):
     images = []
     i = 0
@@ -245,13 +282,22 @@ def save_data(data, save_dir='dataset/', save_train=True, save_test=True, save_v
 
 
 def write_conf(data, task="Skill-MTCNN"):
-    batch_size, batch_index_max = data
     # 创建管理对象
     conf = configparser.ConfigParser()
     conf.read("config.ini", encoding="utf-8")
-    # 修改某key的value
-    conf.set(task, "batch_index_max", str(batch_index_max))
-    conf.set(task, "batch_size", str(batch_size))
+
+    if task == "TestBatch":
+        batch_size, batch_index_max, total = data
+        # 修改某key的value
+        conf.set(task, "batch_index_max", str(batch_index_max))
+        conf.set(task, "batch_size", str(batch_size))
+        conf.set(task, "total", str(total))
+    else:
+        batch_size, batch_index_max = data
+        # 修改某key的value
+        conf.set(task, "batch_index_max", str(batch_index_max))
+        conf.set(task, "batch_size", str(batch_size))
+
     conf.write(open("config.ini", "a"))  # 删除原文件重新写入   "a"是追加模式
 
 

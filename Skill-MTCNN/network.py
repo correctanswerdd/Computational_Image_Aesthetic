@@ -250,31 +250,32 @@ class Network(object):
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
 
+        # load data
         dataset = AVAImages()
-        dataset.load_data()
+        dataset.load_dataset()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        y_test = dis2mean(dataset.test_set_y[:, 0: 10])
-        y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
         dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
-        dataset.read_batch_cfg()
-        learning_rate, learning_rate_decay, epoch, alpha, beta, gamma, theta = read_cfg()
 
+        # load parameters
+        dataset.read_batch_cfg(task="Skill-MTCNN")
+        dataset.read_batch_cfg(task="TestBatch")
+        learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
+
+        # placeholders
         w, h, c = self.input_size
         with tf.name_scope("Inputs"):
             x = tf.placeholder(tf.float32, [None, w, h, c])
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
         y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
-        y_outputs_fix1 = tf_fixprob(y_outputs[:, 0: 10])
-        y_outputs_fix2 = y_outputs[:, 10:]
-        y_outputs_fix = tf.concat([y_outputs_fix1, y_outputs_fix2], axis=1, name='concat')
+        y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
 
+        # other parameters
         global_step = tf.Variable(0, trainable=False)
-        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
-            r_kus = r_kurtosis(y_outputs_fix[:, 0: 10], th)
-            dis_loss = JSD(y_outputs_fix[:, 0: 10], y[:, 0: 10])
+            r_kus = r_kurtosis(y_outputs_fix, th)
+            dis_loss = JSD(y_outputs_fix, y[:, 0: 10])
             loss = r_kus * dis_loss
         with tf.name_scope("Train"):
             # get variables
@@ -300,7 +301,7 @@ class Network(object):
             for i in range(epoch):
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                     y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
                     step = sess.run(global_step)
                     cross_val_loss_transfer = sess.run(dis_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
@@ -315,13 +316,23 @@ class Network(object):
                         best_val_loss = val_loss
                         saver.save(sess, model_save_path + 'my_model')
 
-                        ### test acc
-                        y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
-                        y_outputs_ = dis2mean(y_outputs_[:, 0: 10])
-                        y_pred = np.int64(y_outputs_ >= th_score)
-                        test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
+                        # test acc
+                        test_end = 0
+                        test_correct_count = 0
+                        while test_end == 0:
+                            test_x_b, test_y_b, test_end = dataset.load_next_batch_quicker("test")
+                            y_outputs_ = sess.run(y_outputs, feed_dict={x: test_x_b})
+                            y_outputs_mean = dis2mean(y_outputs_[:, 0: 10])
+                            y_pred = np.int64(y_outputs_mean >= th_score)
+
+                            y_test = dis2mean(test_y_b[:, 0: 10])
+                            y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
+
+                            test_correct_count += sum((y_pred - y_test) == 0)
+                        test_acc = test_correct_count / dataset.test_total
                         print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
                               format(acc=test_acc, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
+
                         if test_acc > best_test_acc:
                             best_test_acc = test_acc
                             best_test_acc_epoch = i
@@ -344,12 +355,11 @@ class Network(object):
         dataset = AVAImages()
         dataset.load_dataset()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        y_test = dis2mean(dataset.test_set_y[:, 0: 10])
-        y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
         dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
 
         # load parameters
         dataset.read_batch_cfg(task="Skill-MTCNN")
+        dataset.read_batch_cfg(task="TestBatch")
         learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
 
         # placeholders
@@ -414,7 +424,7 @@ class Network(object):
             while i <= epoch and not stop_flag:
                 while True:
                     # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch_quicker(read_dir=data)
+                    x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                     y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
@@ -450,14 +460,21 @@ class Network(object):
                         cor_matrix1 = min_max_normalization(cor_matrix1)
 
                         # test acc
-                        y_outputs_ = sess.run(y_outputs, feed_dict={x: dataset.test_set_x})
-                        y_outputs_mean = dis2mean(y_outputs_[:, 0: 10])
-                        y_pred = np.int64(y_outputs_mean >= th_score)
-                        test_acc = sum((y_pred - y_test) == 0) / dataset.test_set_x.shape[0]
-                        print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".format(acc=test_acc,
-                                                                                                    best=best_test_acc,
-                                                                                                    e=best_test_acc_epoch,
-                                                                                                    b=best_test_acc_batch))
+                        test_end = 0
+                        test_correct_count = 0
+                        while test_end == 0:
+                            test_x_b, test_y_b, test_end = dataset.load_next_batch_quicker("test")
+                            y_outputs_ = sess.run(y_outputs, feed_dict={x: test_x_b})
+                            y_outputs_mean = dis2mean(y_outputs_[:, 0: 10])
+                            y_pred = np.int64(y_outputs_mean >= th_score)
+
+                            y_test = dis2mean(test_y_b[:, 0: 10])
+                            y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
+
+                            test_correct_count += sum((y_pred - y_test) == 0)
+                        test_acc = test_correct_count / dataset.test_total
+                        print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
+                              format(acc=test_acc, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
                         if test_acc > best_test_acc:
                             best_test_acc = test_acc
                             best_test_acc_epoch = i
