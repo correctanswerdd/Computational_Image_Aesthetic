@@ -1,7 +1,7 @@
 from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
 from dataset_utils import dis2mean, get_index2score_dis, load_data
-from network_utils import MTCNN_v2, JSD, distribution_loss, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
+from network_utils import MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
     tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization
 import os
 import tensorflow as tf
@@ -236,7 +236,7 @@ class Network(object):
             pickle.dump(cuv, f)
 
     # #######################################################TRAIN######################################################
-    def train_score_CNN(self, data='dataset/', model_save_path='./model_score_CNN/', th_score=5.5):
+    def train_pure_distribution(self, model_save_path='./model_score_CNN/', th_score=5.5):
         """
         训练单纯的分数分布预测模型
         :param data:
@@ -303,12 +303,20 @@ class Network(object):
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                     y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
-                    step = sess.run(global_step)
-                    cross_val_loss_transfer = sess.run(dis_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
-                    train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
 
-                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
-                                                         th: cross_val_loss_transfer})
+                    # cross_val_loss
+                    th_end = 0
+                    cross_val_loss_transfer = 0.0
+                    while th_end == 0:
+                        th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
+                        th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
+                        cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
+                        cross_val_loss_transfer += cross_val_loss_
+                    cross_val_loss_transfer /= dataset.th_batch_index_max
+
+                    # train
+                    train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
+                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
                     print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
                           format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
@@ -342,11 +350,12 @@ class Network(object):
                         break
 
             #### save
-            os.system('zip -r myfile.zip ./' + model_save_path)
-            sava_train_model(model_file="myfile.zip", dir_name="./file", overwrite=True)
-            upload_data("myfile.zip", overwrite=True)
+            file_name = "mtcnnv2_pd"
+            os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
+            sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
+            upload_data("{f}.zip".format(f=file_name), overwrite=True)
 
-    def train_MTCNN_v2(self, data='dataset/', model_save_path='./model_MTCNN_v2/', th_score=5.5):
+    def train_mtcnn(self, model_save_path='./model_mtcnn/', th_score=5.5):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
@@ -355,11 +364,11 @@ class Network(object):
         dataset = AVAImages()
         dataset.load_dataset()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
 
         # load parameters
-        dataset.read_batch_cfg(task="Skill-MTCNN")
+        dataset.read_batch_cfg(task="TrainBatch")
         dataset.read_batch_cfg(task="TestBatch")
+        dataset.read_batch_cfg(task="ThBatch")
         learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
 
         # placeholders
@@ -369,7 +378,7 @@ class Network(object):
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
             task_id = tf.placeholder(tf.int32)
-        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN(inputs=x, outputs=self.output_size, training=True)
         y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
 
         # other parameters
@@ -428,19 +437,33 @@ class Network(object):
                     y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
                     step = sess.run(global_step)
                     if step < train_theta_and_W_first:
-                        cross_val_loss_transfer = sess.run(dis_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        th_end = 0
+                        cross_val_loss_transfer = 0.0
+                        while th_end == 0:
+                            th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
+                            th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
+                            cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
+                            cross_val_loss_transfer += cross_val_loss_
+                        cross_val_loss_transfer /= dataset.th_batch_index_max
                         train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
                     elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
                         sess.run(upgrade_global_step)
                     else:
-                        cross_val_loss_transfer = sess.run(dis_loss, feed_dict={x: dataset.Th_x, y: dataset.Th_y})
+                        th_end = 0
+                        cross_val_loss_transfer = 0.0
+                        while th_end == 0:
+                            th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
+                            th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
+                            cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
+                            cross_val_loss_transfer += cross_val_loss_
+                        cross_val_loss_transfer /= dataset.th_batch_index_max
+
                         for taskid in range(self.output_size):
                             train_op_, loss_ = sess.run([train_op, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer, task_id: taskid})
                         sess.run(upgrade_global_step)
 
-                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y,
-                                                         th: cross_val_loss_transfer})
+                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
                     print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
                           format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
 
@@ -450,8 +473,7 @@ class Network(object):
 
                         # save data
                         saver.save(sess, model_save_path + 'my_model')
-                        # correlation matrix
-                        # cor1
+                        # correlation matrix, cor1
                         Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
                         W = np.zeros(shape=(self.output_size, 4096))
                         for ii in range(W.shape[0]):
@@ -491,9 +513,10 @@ class Network(object):
 
             # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
-            os.system('zip -r mtcnn_v2.zip ./' + model_save_path)
-            sava_train_model(model_file="mtcnn_v2.zip", dir_name="./file", overwrite=True)
-            upload_data("mtcnn_v2.zip", overwrite=True)
+            file_name = "mtcnnv2"
+            os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
+            sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
+            upload_data("{f}.zip".format(f=file_name), overwrite=True)
 
     def train_cor_matrix_label(self, data='dataset/', model_save_path='./model_cor_matrix2/', val=True):
         folder = os.path.exists(model_save_path)

@@ -201,6 +201,40 @@ def split_test_set(root_dir, save_dir='testbatch/', batch_size=32, if_write=Fals
         write_conf(data, task="TestBatch")
 
 
+def split_Th_set(root_dir, save_dir='Thbatch/', batch_size=32):
+    Th_x, Th_y = load_data(root_dir, flag="Th")
+
+    folder = os.path.exists(root_dir + save_dir)
+    if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
+        os.makedirs(root_dir + save_dir)  # makedirs 创建文件时如果路径不存在会创建这个路径
+
+    i = 0
+    total = Th_x.shape[0]
+    it = total // batch_size
+    if total % batch_size == 0:
+        it -= 1
+    batch_index_max = it  # it是最后一个batch的起始index
+
+    progress = ProgressBar(it)
+    progress.start()
+    while i < it:
+        with open(root_dir + save_dir + "Th_x_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(Th_x[i * batch_size: (i + 1) * batch_size, :, :, :], f)
+        with open(root_dir + save_dir + "Th_y_" + str(i) + ".pkl", "wb") as f:
+            pickle.dump(Th_y[i * batch_size: (i + 1) * batch_size], f)
+        i += 1
+        progress.show_progress(i)
+    progress.end()
+
+    print('last block!')
+    with open(root_dir + save_dir + "Th_x_" + str(i) + ".pkl", "wb") as f:
+        pickle.dump(Th_x[i * batch_size: total, :, :, :], f)
+    with open(root_dir + save_dir + "Th_y_" + str(i) + ".pkl", "wb") as f:
+        pickle.dump(Th_y[i * batch_size: total], f)
+
+    print("batchsize:{bs}, batchindex_max:{bim}.".format(bs=batch_size, bim=batch_index_max))
+
+
 def urls_to_images_no_check(urls, root_dir, file_dir='AVA_dataset/images/', size=224, flag=1):
     images = []
     i = 0
