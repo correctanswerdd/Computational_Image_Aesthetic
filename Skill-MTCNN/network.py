@@ -1,7 +1,7 @@
 from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
 from dataset_utils import dis2mean, get_index2score_dis, load_data
-from network_utils import MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
+from network_utils import MTCNN_v3, MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
     tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization
 import os
 import tensorflow as tf
@@ -254,11 +254,11 @@ class Network(object):
         dataset = AVAImages()
         dataset.load_dataset()
         dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
-        dataset.Th_y[:, 0: 10] = fixprob(dataset.Th_y[:, 0: 10])
 
         # load parameters
-        dataset.read_batch_cfg(task="Skill-MTCNN")
+        dataset.read_batch_cfg(task="TrainBatch")
         dataset.read_batch_cfg(task="TestBatch")
+        dataset.read_batch_cfg(task="ThBatch")
         learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
 
         # placeholders
@@ -292,17 +292,27 @@ class Network(object):
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
         best_val_loss = 1000
+        best_val_loss_step = 0
+        stop_patience = 60
+        best_loss = 1000
+        best_loss_step = 0
+        lr_patience = 50
         improvement_threshold = 0.999
         best_test_acc = 0.0
         best_test_acc_epoch = 0
         best_test_acc_batch = 0
+        train_loss = []
+        val_loss = []
+        test_acc = []
+        i = 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            for i in range(epoch):
+            while i <= epoch and not stop_flag:
                 while True:
                     # 遍历所有batch
                     x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                     y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
+                    step = sess.run(global_step)
 
                     # cross_val_loss
                     th_end = 0
@@ -316,13 +326,20 @@ class Network(object):
 
                     # train
                     train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
-                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
-                    print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
-                          format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+                    train_loss.append(loss_)
+                    if loss_ < best_loss:
+                        best_loss = loss_
+                        best_loss_step = step
 
-                    if val_loss < best_val_loss * improvement_threshold:
-                        best_val_loss = val_loss
-                        saver.save(sess, model_save_path + 'my_model')
+                    val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
+                    val_loss.append(val_loss_)
+                    print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
+                          format(dataset.batch_index_max, loss_, val_loss_, i + 1, dataset.batch_index))
+
+                    if val_loss_ < best_val_loss * improvement_threshold:
+                        best_val_loss = val_loss_
+                        best_val_loss_step = step
+                        # saver.save(sess, model_save_path + 'my_model')
 
                         # test acc
                         test_end = 0
@@ -337,19 +354,33 @@ class Network(object):
                             y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
 
                             test_correct_count += sum((y_pred - y_test) == 0)
-                        test_acc = test_correct_count / dataset.test_total
+                        test_acc_ = test_correct_count / dataset.test_total
                         print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
-                              format(acc=test_acc, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
+                              format(acc=test_acc_, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
 
-                        if test_acc > best_test_acc:
+                        if test_acc_ > best_test_acc:
                             best_test_acc = test_acc
                             best_test_acc_epoch = i
                             best_test_acc_batch = dataset.batch_index
+
+                    test_acc.append(test_acc_)
+
+                    # 如果连着几个batch的train loss都没下降，调整学习率
+                    if step - best_loss_step > lr_patience:
+                        learning_rate *= 0.1
+
+                    # 如果连着几个batch的val loss都没下降，则停止训练
+                    if step - best_val_loss_step > stop_patience:
+                        stop_flag = True
+                        break
 
                     if end == 1:
                         break
 
             #### save
+            save_curve = train_loss, val_loss, test_acc
+            with open(model_save_path + 'curve.pkl', 'wb') as f:
+                pickle.dump(save_curve, f)
             file_name = "mtcnnv2_pd"
             os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
             sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
@@ -378,7 +409,7 @@ class Network(object):
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
             task_id = tf.placeholder(tf.int32)
-        y_outputs = MTCNN(inputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v3(inputs=x, outputs=self.output_size, training=True)
         y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
 
         # other parameters
@@ -417,26 +448,36 @@ class Network(object):
             train_op_omega = tf.assign(omegaaa, update_omega(W))
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
-        cross_val_loss_transfer = 0
-        train_theta_and_W_first = 20
+        train_theta_and_W_first = 0
+        best_loss = 1000
+        best_loss_step = 0
+        lr_patience = 50
         best_val_loss = 1000
-        best_val = 0
-        patience = 60
+        best_val_loss_step = 0
+        stop_patience = 60
         stop_flag = False
         improvement_threshold = 0.999
         best_test_acc = 0.0
         best_test_acc_epoch = 0
         best_test_acc_batch = 0
         i = 0
+        train_loss = []
+        train_acc_all = []
+        train_acc_batch = []
+        val_loss = []
+        test_acc = []
+        test_acc_ = 0.0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             while i <= epoch and not stop_flag:
                 while True:
-                    # 遍历所有batch
-                    x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
-                    y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
                     step = sess.run(global_step)
+
                     if step < train_theta_and_W_first:
+                        # 遍历所有batch
+                        x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
+                        y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
+
                         th_end = 0
                         cross_val_loss_transfer = 0.0
                         while th_end == 0:
@@ -446,10 +487,24 @@ class Network(object):
                             cross_val_loss_transfer += cross_val_loss_
                         cross_val_loss_transfer /= dataset.th_batch_index_max
                         train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
-                    elif np.random.rand() < 0.5:
+                        train_loss.append(loss_)
+
+                        # train accuracy
+
+
+                        if loss_ < best_loss:
+                            best_loss = loss_
+                            best_loss_step = step
+
+                    if np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
                         sess.run(upgrade_global_step)
+                        continue
                     else:
+                        # 遍历所有batch
+                        x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
+                        y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
+
                         th_end = 0
                         cross_val_loss_transfer = 0.0
                         while th_end == 0:
@@ -461,18 +516,25 @@ class Network(object):
 
                         for taskid in range(self.output_size):
                             train_op_, loss_ = sess.run([train_op, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer, task_id: taskid})
+
+                            if loss_ < best_loss:
+                                best_loss = loss_
+                                best_loss_step = step
+
+                        train_loss.append(loss_)
                         sess.run(upgrade_global_step)
 
-                    val_loss = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
+                    val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
+                    val_loss.append(val_loss_)
                     print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
-                          format(dataset.batch_index_max, loss_, val_loss, i + 1, dataset.batch_index))
+                          format(dataset.batch_index_max, loss_, val_loss_, i + 1, dataset.batch_index))
 
-                    if val_loss < best_val_loss * improvement_threshold:
-                        best_val_loss = val_loss
-                        best_val = step  # 记录最小val所对应的batch index
+                    if val_loss_ < best_val_loss * improvement_threshold:
+                        best_val_loss = val_loss_
+                        best_val_loss_step = step  # 记录最小val所对应的batch index
 
                         # save data
-                        saver.save(sess, model_save_path + 'my_model')
+                        # saver.save(sess, model_save_path + 'my_model')
                         # correlation matrix, cor1
                         Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
                         W = np.zeros(shape=(self.output_size, 4096))
@@ -494,16 +556,22 @@ class Network(object):
                             y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
 
                             test_correct_count += sum((y_pred - y_test) == 0)
-                        test_acc = test_correct_count / dataset.test_total
+                        test_acc_ = test_correct_count / dataset.test_total
                         print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
-                              format(acc=test_acc, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
-                        if test_acc > best_test_acc:
-                            best_test_acc = test_acc
+                              format(acc=test_acc_, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
+                        if test_acc_ > best_test_acc:
+                            best_test_acc = test_acc_
                             best_test_acc_epoch = i
                             best_test_acc_batch = dataset.batch_index
 
+                    test_acc.append(test_acc_)
+
+                    # 如果连着几个batch的train loss都没下降，调整学习率
+                    if step - best_loss_step > lr_patience:
+                        learning_rate *= 0.1
+
                     # 如果连着几个batch的val loss都没下降，则停止训练
-                    if step - best_val > patience:
+                    if step - best_val_loss_step > stop_patience:
                         stop_flag = True
                         break
 
@@ -513,6 +581,9 @@ class Network(object):
 
             # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            save_curve = train_loss, val_loss, test_acc
+            with open(model_save_path + 'curve.pkl', 'wb') as f:
+                pickle.dump(save_curve, f)
             file_name = "mtcnnv2"
             os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
             sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)

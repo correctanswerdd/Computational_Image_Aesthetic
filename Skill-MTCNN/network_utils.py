@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import configparser
 from resnet import resnet_v2_50
+from AlexNet import inference
 slim = tf.contrib.slim
 
 
@@ -10,6 +11,21 @@ def score2style(inputs):
     with tf.variable_scope("Cor_Matrix"):
         output = slim.fully_connected(inputs, 14, scope='fc')
     return output
+
+
+def MTCNN_v3(inputs, outputs, training=True):
+    with tf.variable_scope("Theta"):
+        feature_vec, _ = inference(images=inputs)
+
+    with tf.variable_scope("W"):
+        l7_list1 = [slim.fully_connected(feature_vec, 1) for i in range(10)]
+        l7_concat1 = tf.concat(l7_list1, axis=1)
+        l7_concat1 = l7_concat1 / tf.reduce_sum(l7_concat1, axis=1, keep_dims=True)
+
+        l7_list2 = [slim.fully_connected(feature_vec, 1) for i in range(outputs-10)]
+        l7_concat2 = tf.concat(l7_list2, axis=1)
+
+    return tf.concat([l7_concat1, l7_concat2], axis=1, name='concat')
 
 
 def MTCNN_v2(inputs, outputs, training=True):
@@ -258,9 +274,12 @@ def propagate_ROC(output, threshold):
             Y_predict[i] = 0
     return Y_predict
 
+
 def get_uninitialized_variables(sess):
     global_vars = tf.global_variables()
     is_not_initialized = sess.run([tf.is_variable_initialized(var) for var in global_vars])
     not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
     print([str(i.name) for i in not_initialized_vars])
     return not_initialized_vars
+
+def accuracy(sess):

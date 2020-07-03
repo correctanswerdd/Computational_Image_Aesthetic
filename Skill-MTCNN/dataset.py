@@ -1,6 +1,6 @@
 import pickle
 import configparser
-from dataset_utils import split, split_v2, create_setx_for_Th, create_train_set, select_img_of_same_skill, load_data, split_test_set, split_Th_set
+from dataset_utils import split_v2, create_setx_for_Th, create_train_set, select_img_of_same_skill, load_data, split_test_set, split_Th_set
 
 class AVAImages:
     def __init__(self):
@@ -44,7 +44,7 @@ class AVAImages:
             with open('dataset/train_raw/train_set_y_' + str(self.batch_index) + '.pkl', 'rb') as f:
                 y = pickle.load(f)
             if self.batch_index == self.batch_index_max:
-                print('last batch!')
+                print('last train batch!')
                 self.batch_index = 0
                 flag = 1
             else:
@@ -57,7 +57,7 @@ class AVAImages:
             with open('dataset/testbatch/test_set_y_' + str(self.test_batch_index) + '.pkl', 'rb') as f:
                 y = pickle.load(f)
             if self.test_batch_index == self.test_batch_index_max:
-                print('last batch!')
+                print('last test batch!')
                 self.test_batch_index = 0
                 flag = 1
             else:
@@ -70,7 +70,7 @@ class AVAImages:
             with open('dataset/Thbatch/Th_y_' + str(self.th_batch_index) + '.pkl', 'rb') as f:
                 y = pickle.load(f)
             if self.th_batch_index == self.th_batch_index_max:
-                print('last batch!')
+                print('last Th batch!')
                 self.th_batch_index = 0
                 flag = 1
             else:
@@ -82,7 +82,7 @@ class AVAImages:
         # self.train_set_x, self.train_set_y = load_data(flag="train")
         # self.test_set_x, self.test_set_y = load_data(flag="test")
         self.val_set_x, self.val_set_y = load_data(flag="val")
-        self.Th_x, self.Th_y = load_data(flag="Th")
+        # self.Th_x, self.Th_y = load_data(flag="Th")
 
     def read_batch_cfg(self, task="Skill-MTCNN"):
         # 创建管理对象
