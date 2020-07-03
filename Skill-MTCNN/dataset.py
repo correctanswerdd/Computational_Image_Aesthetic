@@ -5,13 +5,12 @@ from dataset_utils import split_v2, create_setx_for_Th, create_train_set, select
 class AVAImages:
     def __init__(self):
         self.batch_index = 0
-        self.batch_index_max = 0
         self.batch_size = 0
+        self.batch_index_max = 0
 
         self.test_batch_index = 0
         self.test_batch_size = 0
         self.test_batch_index_max = 0
-        self.test_total = 0
 
         self.th_batch_index = 0
         self.th_batch_size = 0
@@ -92,7 +91,6 @@ class AVAImages:
         if task == "TestBatch":
             self.test_batch_index_max = conf.getint(task, "batch_index_max")
             self.test_batch_size = conf.getint(task, "batch_size")
-            self.test_total = conf.getint(task, "total")
         elif task == "TrainBatch":
             self.batch_index_max = conf.getint(task, "batch_index_max")
             self.batch_size = conf.getint(task, "batch_size")

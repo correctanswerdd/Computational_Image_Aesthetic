@@ -282,4 +282,44 @@ def get_uninitialized_variables(sess):
     print([str(i.name) for i in not_initialized_vars])
     return not_initialized_vars
 
-def accuracy(sess):
+
+def get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y):
+    th_end = 0
+    cross_val_loss_transfer = 0.0
+    while th_end == 0:
+        th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
+        th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
+        cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
+        cross_val_loss_transfer += cross_val_loss_
+    cross_val_loss_transfer /= dataset.th_batch_index_max
+    return cross_val_loss_transfer
+
+
+def get_all_train_accuracy(sess, y_outputs, dataset, x):
+    end = 0
+    correct_count = 0.0
+    train_size = 0
+    while end == 0:
+        x_b, y_b, end = dataset.load_next_batch_quicker("train")
+        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
+        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
+        y_pred_ = np.int64(y_pred_ >= 5)
+        y_b_ = np.int64(y_b >= 5)
+        correct_count += sum((y_pred_ - y_b_) == 0)
+        train_size += x_b.shape[0]
+    return correct_count / train_size
+
+
+def get_all_test_accuracy(sess, y_outputs, dataset, x):
+    end = 0
+    correct_count = 0.0
+    test_size = 0
+    while end == 0:
+        x_b, y_b, end = dataset.load_next_batch_quicker("test")
+        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
+        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
+        y_pred_ = np.int64(y_pred_ >= 5)
+        y_b_ = np.int64(y_b >= 5)
+        correct_count += sum((y_pred_ - y_b_) == 0)
+        test_size += x_b.shape[0]
+    return correct_count / test_size

@@ -2,7 +2,8 @@ from flyai.train_helper import upload_data, download, sava_train_model  # 因为
 from dataset import AVAImages
 from dataset_utils import dis2mean, get_index2score_dis, load_data
 from network_utils import MTCNN_v3, MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
-    tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization
+    tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization, \
+    get_cross_val_loss_transfer, get_all_train_accuracy, get_all_test_accuracy
 import os
 import tensorflow as tf
 import numpy as np
@@ -386,7 +387,7 @@ class Network(object):
             sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
             upload_data("{f}.zip".format(f=file_name), overwrite=True)
 
-    def train_mtcnn(self, model_save_path='./model_mtcnn/', th_score=5.5):
+    def train_mtcnn(self, model_save_path='./model_mtcnn/'):
         folder = os.path.exists(model_save_path)
         if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(model_save_path)  # makedirs 创建文件时如果路径不存在会创建这个路径
@@ -409,7 +410,7 @@ class Network(object):
             y = tf.placeholder(tf.float32, [None, self.output_size])
             th = tf.placeholder(tf.float32)
             task_id = tf.placeholder(tf.int32)
-        y_outputs = MTCNN_v3(inputs=x, outputs=self.output_size, training=True)
+        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
         y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
 
         # other parameters
@@ -478,19 +479,22 @@ class Network(object):
                         x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                         y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
 
-                        th_end = 0
-                        cross_val_loss_transfer = 0.0
-                        while th_end == 0:
-                            th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
-                            th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
-                            cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
-                            cross_val_loss_transfer += cross_val_loss_
-                        cross_val_loss_transfer /= dataset.th_batch_index_max
+                        # train loss
+                        cross_val_loss_transfer = get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y)
                         train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
                         train_loss.append(loss_)
 
-                        # train accuracy
+                        # train accuracy batch
+                        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
+                        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
+                        y_pred_ = np.int64(y_pred_ >= 5)
+                        y_b_ = np.int64(y_b >= 5)
+                        acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
+                        train_acc_batch.append(acc_batch_)
 
+                        # train accuracy all
+                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, dataset, x)
+                        train_acc_all.append(train_acc_all_)
 
                         if loss_ < best_loss:
                             best_loss = loss_
@@ -505,16 +509,8 @@ class Network(object):
                         x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                         y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
 
-                        th_end = 0
-                        cross_val_loss_transfer = 0.0
-                        while th_end == 0:
-                            th_x_b, th_y_b, th_end = dataset.load_next_batch_quicker("Th")
-                            th_y_b[:, 0: 10] = fixprob(th_y_b[:, 0: 10])
-                            cross_val_loss_ = sess.run(dis_loss, feed_dict={x: th_x_b, y: th_y_b})
-                            cross_val_loss_transfer += cross_val_loss_
-                        cross_val_loss_transfer /= dataset.th_batch_index_max
-
                         for taskid in range(self.output_size):
+                            cross_val_loss_transfer = get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y)
                             train_op_, loss_ = sess.run([train_op, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer, task_id: taskid})
 
                             if loss_ < best_loss:
@@ -523,6 +519,18 @@ class Network(object):
 
                         train_loss.append(loss_)
                         sess.run(upgrade_global_step)
+
+                        # train accuracy batch
+                        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
+                        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
+                        y_pred_ = np.int64(y_pred_ >= 5)
+                        y_b_ = np.int64(y_b >= 5)
+                        acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
+                        train_acc_batch.append(acc_batch_)
+
+                        # train accuracy all
+                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, dataset, x)
+                        train_acc_all.append(train_acc_all_)
 
                     val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
                     val_loss.append(val_loss_)
@@ -544,21 +552,10 @@ class Network(object):
                         cor_matrix1 = min_max_normalization(cor_matrix1)
 
                         # test acc
-                        test_end = 0
-                        test_correct_count = 0
-                        while test_end == 0:
-                            test_x_b, test_y_b, test_end = dataset.load_next_batch_quicker("test")
-                            y_outputs_ = sess.run(y_outputs, feed_dict={x: test_x_b})
-                            y_outputs_mean = dis2mean(y_outputs_[:, 0: 10])
-                            y_pred = np.int64(y_outputs_mean >= th_score)
-
-                            y_test = dis2mean(test_y_b[:, 0: 10])
-                            y_test = np.int64(y_test >= th_score)  # 前提test_set_y.shape=(num,)
-
-                            test_correct_count += sum((y_pred - y_test) == 0)
-                        test_acc_ = test_correct_count / dataset.test_total
+                        test_acc_ = get_all_test_accuracy(sess, y_outputs, dataset, x)
                         print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
                               format(acc=test_acc_, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
+
                         if test_acc_ > best_test_acc:
                             best_test_acc = test_acc_
                             best_test_acc_epoch = i
