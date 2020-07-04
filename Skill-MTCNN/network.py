@@ -578,7 +578,7 @@ class Network(object):
 
             # ### save
             cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
-            save_curve = train_loss, val_loss, test_acc
+            save_curve = train_loss, val_loss, test_acc, train_acc_all, train_acc_batch
             with open(model_save_path + 'curve.pkl', 'wb') as f:
                 pickle.dump(save_curve, f)
             file_name = "mtcnnv2"
