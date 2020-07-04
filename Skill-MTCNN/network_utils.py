@@ -304,7 +304,7 @@ def get_all_train_accuracy(sess, y_outputs, dataset, x):
         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
         y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
         y_pred_ = np.int64(y_pred_ >= 5)
-        y_b_ = np.int64(y_b >= 5)
+        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
         correct_count += sum((y_pred_ - y_b_) == 0)
         train_size += x_b.shape[0]
     return correct_count / train_size

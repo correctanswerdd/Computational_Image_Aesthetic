@@ -474,7 +474,7 @@ class Network(object):
                 while True:
                     step = sess.run(global_step)
 
-                    if step < train_theta_and_W_first:
+                    if step <= train_theta_and_W_first:
                         # 遍历所有batch
                         x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                         y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
@@ -488,7 +488,7 @@ class Network(object):
                         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
                         y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
                         y_pred_ = np.int64(y_pred_ >= 5)
-                        y_b_ = np.int64(y_b >= 5)
+                        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
                         acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
                         train_acc_batch.append(acc_batch_)
 
@@ -524,7 +524,7 @@ class Network(object):
                         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
                         y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
                         y_pred_ = np.int64(y_pred_ >= 5)
-                        y_b_ = np.int64(y_b >= 5)
+                        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
                         acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
                         train_acc_batch.append(acc_batch_)
 
