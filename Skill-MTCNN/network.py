@@ -449,7 +449,7 @@ class Network(object):
             train_op_omega = tf.assign(omegaaa, update_omega(W))
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
-        train_theta_and_W_first = 0
+        train_theta_and_W_first = 20
         best_loss = 1000
         best_loss_step = 0
         lr_patience = 50
@@ -475,6 +475,7 @@ class Network(object):
                     step = sess.run(global_step)
 
                     if step <= train_theta_and_W_first:
+                        print("train theta&W first ...")
                         # 遍历所有batch
                         x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                         y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
