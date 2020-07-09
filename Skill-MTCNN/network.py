@@ -475,7 +475,6 @@ class Network(object):
                     step = sess.run(global_step)
 
                     if step <= train_theta_and_W_first:
-                        print("train theta&W first ...")
                         # 遍历所有batch
                         x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
                         y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
@@ -494,14 +493,14 @@ class Network(object):
                         train_acc_batch.append(acc_batch_)
 
                         # train accuracy all
-                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, dataset, x)
+                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, x)
                         train_acc_all.append(train_acc_all_)
 
                         if loss_ < best_loss:
                             best_loss = loss_
                             best_loss_step = step
 
-                    if np.random.rand() < 0.5:
+                    elif np.random.rand() < 0.5:
                         train_op_ = sess.run(train_op_omega)
                         sess.run(upgrade_global_step)
                         continue
@@ -519,7 +518,6 @@ class Network(object):
                                 best_loss_step = step
 
                         train_loss.append(loss_)
-                        sess.run(upgrade_global_step)
 
                         # train accuracy batch
                         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
@@ -530,13 +528,13 @@ class Network(object):
                         train_acc_batch.append(acc_batch_)
 
                         # train accuracy all
-                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, dataset, x)
+                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, x)
                         train_acc_all.append(train_acc_all_)
 
                     val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
                     val_loss.append(val_loss_)
-                    print("epoch {3} batch {4}/{0} loss {1}, validation loss {2}".
-                          format(dataset.batch_index_max, loss_, val_loss_, i + 1, dataset.batch_index))
+                    print("epoch {ep} batch {b}/{bs} loss {loss}, validation loss {vl}".
+                          format(ep=i+1, b=dataset.batch_index, bs=dataset.batch_index_max, loss=loss_, vl=val_loss_))
 
                     if val_loss_ < best_val_loss * improvement_threshold:
                         best_val_loss = val_loss_
@@ -557,7 +555,7 @@ class Network(object):
                         print("    test acc {acc} with best acc {best} in epoch{e}/batch{b}".
                               format(acc=test_acc_, best=best_test_acc, e=best_test_acc_epoch, b=best_test_acc_batch))
 
-                        if test_acc_ > best_test_acc:
+                        if test_acc_ >= best_test_acc:
                             best_test_acc = test_acc_
                             best_test_acc_epoch = i
                             best_test_acc_batch = dataset.batch_index

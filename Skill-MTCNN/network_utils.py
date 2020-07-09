@@ -3,6 +3,7 @@ import numpy as np
 import configparser
 from resnet import resnet_v2_50
 from AlexNet import inference
+from dataset import AVAImages
 slim = tf.contrib.slim
 
 
@@ -295,7 +296,9 @@ def get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y):
     return cross_val_loss_transfer
 
 
-def get_all_train_accuracy(sess, y_outputs, dataset, x):
+def get_all_train_accuracy(sess, y_outputs, x):
+    dataset = AVAImages()
+    dataset.read_batch_cfg(task="TrainBatch")
     end = 0
     correct_count = 0.0
     train_size = 0
@@ -319,7 +322,7 @@ def get_all_test_accuracy(sess, y_outputs, dataset, x):
         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
         y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
         y_pred_ = np.int64(y_pred_ >= 5)
-        y_b_ = np.int64(y_b >= 5)
+        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
         correct_count += sum((y_pred_ - y_b_) == 0)
         test_size += x_b.shape[0]
     return correct_count / test_size
