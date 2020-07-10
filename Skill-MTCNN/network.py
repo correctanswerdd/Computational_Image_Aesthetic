@@ -1,7 +1,7 @@
 from flyai.train_helper import upload_data, download, sava_train_model  # 因为要蹭flyai的gpu
 from dataset import AVAImages
 from dataset_utils import dis2mean, get_index2score_dis, load_data
-from network_utils import MTCNN_v3, MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
+from network_utils import MTCNN_v3, MTCNN_v4, MTCNN_v2, MTCNN, JSD, propagate_ROC, fixprob, tf_fixprob, read_cfg, get_W, ini_omega, \
     tr, r_kurtosis, style_loss, scalar_for_weights, update_omega, print_task_correlation, min_max_normalization, \
     get_cross_val_loss_transfer, get_all_train_accuracy, get_all_test_accuracy
 import os
@@ -395,58 +395,34 @@ class Network(object):
         # load data
         dataset = AVAImages()
         dataset.load_dataset()
-        dataset.val_set_y[:, 0: 10] = fixprob(dataset.val_set_y[:, 0: 10])
+        dataset.val_set_y = np.int64(np.argmax(dataset.val_set_y[:, 0: 10], axis=1) >= 5)
 
         # load parameters
         dataset.read_batch_cfg(task="TrainBatch")
-        dataset.read_batch_cfg(task="TestBatch")
-        dataset.read_batch_cfg(task="ThBatch")
         learning_rate, learning_rate_decay, epoch, alpha, gamma, theta = read_cfg(task="Skill-MTCNN")
 
         # placeholders
         w, h, c = self.input_size
         with tf.name_scope("Inputs"):
             x = tf.placeholder(tf.float32, [None, w, h, c])
-            y = tf.placeholder(tf.float32, [None, self.output_size])
-            th = tf.placeholder(tf.float32)
-            task_id = tf.placeholder(tf.int32)
-        y_outputs = MTCNN_v2(inputs=x, outputs=self.output_size, training=True)
-        y_outputs_fix = tf_fixprob(y_outputs[:, 0: 10])
+            y = tf.placeholder(tf.int64)
+        y_outputs = MTCNN_v4(inputs=x, outputs=self.output_size, training=True)
 
         # other parameters
         global_step = tf.Variable(0, trainable=False)
-        upgrade_global_step = tf.assign(global_step, tf.add(global_step, 1))
 
         with tf.name_scope("Loss"):
-            W = get_W()
-            ini_omega(self.output_size)
-            omegaaa = tf.get_default_graph().get_tensor_by_name('Loss/Omega/omega:0')
-            tr_W_omega_WT = tr(W, omegaaa)
-            r_kus = r_kurtosis(y_outputs_fix, th)
-            dis_loss = JSD(y_outputs_fix, y[:, 0: 10])
-            loss = r_kus * (dis_loss +
-                            gamma * style_loss(y_outputs[:, 10:], y[:, 10:]) +
-                            tf.contrib.layers.apply_regularization(
-                                regularizer=tf.contrib.layers.l2_regularizer(alpha, scope=None),
-                                weights_list=tf.trainable_variables()) +
-                            theta * tr_W_omega_WT)
+            loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=y_outputs))
         with tf.name_scope("Train"):
             # get variables
             train_theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Theta')
-            WW = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W')
 
             # lr weight decay
             learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
                                                        decay_steps=10, decay_rate=learning_rate_decay, staircase=False)
 
             # optimize
-            opt = tf.train.AdamOptimizer(learning_rate)
-            gradient_var_all = opt.compute_gradients(loss, var_list=train_theta + WW)
-            capped_gvs = [(scalar_for_weights(grad, var, omegaaa, task_id), var)
-                          for grad, var in gradient_var_all]
-            train_op = opt.apply_gradients(capped_gvs)
-            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step, var_list=train_theta + WW)
-            train_op_omega = tf.assign(omegaaa, update_omega(W))
+            train_op_all = tf.train.AdamOptimizer(learning_rate).minimize(loss, global_step=global_step, var_list=train_theta)
 
         saver = tf.train.Saver(max_to_keep=1, keep_checkpoint_every_n_hours=2)
         train_theta_and_W_first = 20
@@ -474,64 +450,25 @@ class Network(object):
                 while True:
                     step = sess.run(global_step)
 
-                    if step <= train_theta_and_W_first:
-                        # 遍历所有batch
-                        x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
-                        y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
+                    # 遍历所有batch
+                    x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
+                    y_b = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
 
-                        # train loss
-                        cross_val_loss_transfer = get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y)
-                        train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer})
-                        train_loss.append(loss_)
+                    # train loss
+                    train_op_, loss_ = sess.run([train_op_all, loss], feed_dict={x: x_b, y: y_b})
+                    train_loss.append(loss_)
 
-                        # train accuracy batch
-                        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
-                        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
-                        y_pred_ = np.int64(y_pred_ >= 5)
-                        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
-                        acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
-                        train_acc_batch.append(acc_batch_)
+                    # train accuracy batch
+                    y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
+                    y_pred_ = np.argmax(y_outputs_, axis=1)
+                    acc_batch_ = sum((y_pred_ - y_b) == 0) / y_b.shape[0]
+                    train_acc_batch.append(acc_batch_)
 
-                        # train accuracy all
-                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, x)
-                        train_acc_all.append(train_acc_all_)
+                    # train accuracy all
+                    train_acc_all_ = get_all_train_accuracy(sess, y_outputs, x)
+                    train_acc_all.append(train_acc_all_)
 
-                        if loss_ < best_loss:
-                            best_loss = loss_
-                            best_loss_step = step
-
-                    elif np.random.rand() < 0.5:
-                        train_op_ = sess.run(train_op_omega)
-                        sess.run(upgrade_global_step)
-                        continue
-                    else:
-                        # 遍历所有batch
-                        x_b, y_b, end = dataset.load_next_batch_quicker(flag="train")
-                        y_b[:, 0: 10] = fixprob(y_b[:, 0: 10])
-
-                        for taskid in range(self.output_size):
-                            cross_val_loss_transfer = get_cross_val_loss_transfer(sess, dataset, dis_loss, x, y)
-                            train_op_, loss_ = sess.run([train_op, loss], feed_dict={x: x_b, y: y_b, th: cross_val_loss_transfer, task_id: taskid})
-
-                            if loss_ < best_loss:
-                                best_loss = loss_
-                                best_loss_step = step
-
-                        train_loss.append(loss_)
-
-                        # train accuracy batch
-                        y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
-                        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
-                        y_pred_ = np.int64(y_pred_ >= 5)
-                        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
-                        acc_batch_ = sum((y_pred_ - y_b_) == 0) / y_b.shape[0]
-                        train_acc_batch.append(acc_batch_)
-
-                        # train accuracy all
-                        train_acc_all_ = get_all_train_accuracy(sess, y_outputs, x)
-                        train_acc_all.append(train_acc_all_)
-
-                    val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y, th: cross_val_loss_transfer})
+                    val_loss_ = sess.run(loss, feed_dict={x: dataset.val_set_x, y: dataset.val_set_y})
                     val_loss.append(val_loss_)
                     print("epoch {ep} batch {b}/{bs} loss {loss}, validation loss {vl}".
                           format(ep=i+1, b=dataset.batch_index, bs=dataset.batch_index_max, loss=loss_, vl=val_loss_))
@@ -539,16 +476,6 @@ class Network(object):
                     if val_loss_ < best_val_loss * improvement_threshold:
                         best_val_loss = val_loss_
                         best_val_loss_step = step  # 记录最小val所对应的batch index
-
-                        # save data
-                        # saver.save(sess, model_save_path + 'my_model')
-                        # correlation matrix, cor1
-                        Wa_and_Ws = sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='W'))
-                        W = np.zeros(shape=(self.output_size, 4096))
-                        for ii in range(W.shape[0]):
-                            W[ii] = np.array(np.squeeze(Wa_and_Ws[ii * 2]))
-                        cor_matrix1 = print_task_correlation(W, 10, self.output_size - 10)
-                        cor_matrix1 = min_max_normalization(cor_matrix1)
 
                         # test acc
                         test_acc_ = get_all_test_accuracy(sess, y_outputs, dataset, x)
@@ -576,14 +503,14 @@ class Network(object):
                 i += 1
 
             # ### save
-            cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
-            save_curve = train_loss, val_loss, test_acc, train_acc_all, train_acc_batch
-            with open(model_save_path + 'curve.pkl', 'wb') as f:
-                pickle.dump(save_curve, f)
-            file_name = "mtcnnv2"
-            os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
-            sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
-            upload_data("{f}.zip".format(f=file_name), overwrite=True)
+            # cv2.imwrite(model_save_path + "cor_matrix1.png", cv2.resize(cor_matrix1 * 255, (300, 420), interpolation=cv2.INTER_CUBIC))
+            # save_curve = train_loss, val_loss, test_acc, train_acc_all, train_acc_batch
+            # with open(model_save_path + 'curve.pkl', 'wb') as f:
+            #     pickle.dump(save_curve, f)
+            # file_name = "mtcnnv2"
+            # os.system('zip -r {f}.zip ./'.format(f=file_name) + model_save_path)
+            # sava_train_model(model_file="{f}.zip".format(f=file_name), dir_name="./file", overwrite=True)
+            # upload_data("{f}.zip".format(f=file_name), overwrite=True)
 
     def train_cor_matrix_label(self, data='dataset/', model_save_path='./model_cor_matrix2/', val=True):
         folder = os.path.exists(model_save_path)

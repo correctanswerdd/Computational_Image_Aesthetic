@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import configparser
-from resnet import resnet_v2_50
+from resnet import resnet_v2_50, resnet_v2_200
 from AlexNet import inference
 from dataset import AVAImages
 slim = tf.contrib.slim
@@ -12,6 +12,30 @@ def score2style(inputs):
     with tf.variable_scope("Cor_Matrix"):
         output = slim.fully_connected(inputs, 14, scope='fc')
     return output
+
+
+def MTCNN_v4(inputs, outputs, training=True):
+    # simple binary classification
+    with tf.variable_scope("Theta"):
+        l1 = slim.conv2d(inputs, 96, [11, 11], stride=2, padding='VALID', normalizer_fn=None, activation_fn=tf.nn.relu, scope='conv1')
+        l1_bn = tf.layers.batch_normalization(l1, training=training, name='bn1')
+        l1_pool = slim.max_pool2d(l1_bn, [3, 3], padding='VALID', scope='pool1')
+
+        l2 = slim.conv2d(l1_pool, 128, [5, 5], stride=1, padding='SAME', normalizer_fn=None, activation_fn=tf.nn.relu, scope='conv2')
+        l2_bn = tf.layers.batch_normalization(l2, training=training, name='bn2')
+        l2_pool = slim.max_pool2d(l2_bn, [3, 3], padding='SAME', scope='pool2')
+
+        l3 = slim.conv2d(l2_pool, 128, [3, 3], stride=1, padding='SAME', normalizer_fn=None, activation_fn=tf.nn.relu, scope='conv3')
+
+        l4 = slim.conv2d(l3, 256, [3, 3], stride=1, padding='SAME', normalizer_fn=None, activation_fn=tf.nn.relu, scope='conv4')
+        l4_bn = tf.layers.batch_normalization(l4, training=training, name='bn4')
+        l4_pool = slim.max_pool2d(l4_bn, [3, 3], scope='pool4')
+
+        l4_pool_flat = tf.reshape(l4_pool, [-1, 13 * 13 * 256], name='flat1')
+        l5 = slim.fully_connected(l4_pool_flat, 4096)
+        l6 = slim.fully_connected(l5, 4096)
+        l7 = slim.fully_connected(l6, 2)
+    return l7
 
 
 def MTCNN_v3(inputs, outputs, training=True):
@@ -305,10 +329,9 @@ def get_all_train_accuracy(sess, y_outputs, x):
     while end == 0:
         x_b, y_b, end = dataset.load_next_batch_quicker("train")
         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
-        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
-        y_pred_ = np.int64(y_pred_ >= 5)
-        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
-        correct_count += sum((y_pred_ - y_b_) == 0)
+        y_pred_ = np.argmax(y_outputs_, axis=1)
+        y_b = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
+        correct_count += sum((y_pred_ - y_b) == 0)
         train_size += x_b.shape[0]
     return correct_count / train_size
 
@@ -320,9 +343,8 @@ def get_all_test_accuracy(sess, y_outputs, dataset, x):
     while end == 0:
         x_b, y_b, end = dataset.load_next_batch_quicker("test")
         y_outputs_ = sess.run(y_outputs, feed_dict={x: x_b})
-        y_pred_ = np.argmax(y_outputs_[:, 0: 10], axis=1)
-        y_pred_ = np.int64(y_pred_ >= 5)
-        y_b_ = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
-        correct_count += sum((y_pred_ - y_b_) == 0)
+        y_pred_ = np.argmax(y_outputs_, axis=1)
+        y_b = np.int64(np.argmax(y_b[:, 0: 10], axis=1) >= 5)
+        correct_count += sum((y_pred_ - y_b) == 0)
         test_size += x_b.shape[0]
     return correct_count / test_size
